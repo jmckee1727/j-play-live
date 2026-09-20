@@ -48,6 +48,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         neuralVoice: 'am_michael',
         neuralDevice: 'auto',         // auto | webgpu | wasm
         onboardedVoice: false,        // the one-time studio-voice notice has been seen
+        mediaCredit: 'none',          // clues with a picture, video or audio the archive can't show: 'none' = the contestants ring in but their money doesn't move; 'broadcast' = scored as on TV
         micDevice: 'auto',            // which microphone the studio ear opens: 'auto' (built-in when a headset is the default), 'default', or a device id
         outDevice: 'default',         // where the game's own sounds play: 'default' (system) or a device id
         earEngine: 'studio',          // 'studio' (on-device Whisper, when downloaded) or 'chrome' (Chrome's built-in recognizer)
@@ -61,13 +62,20 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // ring-ins under 0.52x the median and 16% over 1.9x; 2.5% over 3.6x.
     const BASE_RATE = 1.15;           // what the speed slider calls 1.00×
     const DIFFICULTY = {
-        easy:     { median: 1000, sigma: 0.65, label: 'Easy (contestants typically ring in ~1 s after the lights)' },
+        easy:     { median: 1500, sigma: 0.65, label: 'Easy (contestants typically ring in ~1.5 s after the lights)' },
         medium:   { median: 500,  sigma: 0.65, label: 'Medium (~0.5 s)' },
         hard:     { median: 300,  sigma: 0.65, label: 'Hard (~0.3 s)' },
         champion: { median: 200,  sigma: 0.6,  label: 'Champion (~0.2 s)' },
         custom:   { median: 500, sigma: 0.65, label: 'Custom' },
     };
     const HOST_RIGHT = [ 'Yes.', 'Correct.', 'That\'s it.', 'Right.', 'Yes, that\'s right.' ];
+    // A clue built around a picture, video or audio file. The contestants had
+    // it on TV; you mostly don't (the archive rarely hosts the media), so by
+    // default their money doesn't move on these -- they ring in and respond as
+    // broadcast, control of the board follows, but for no credit.
+    function mediaClue(info) { return !!(info && info.media && info.media.length); }
+    function othersScore(info) { return S.mediaCredit == 'broadcast' || !mediaClue(info); }
+    function noCreditNote() { return ' <span class="jp-note">(media clue: no change in score)</span>'; }
     const HOST_WRONG = [ 'No.', 'Sorry, no.', 'That is incorrect.', 'No, sorry.' ];
 
     let S = Object.assign({ }, DEFAULTS);
@@ -764,6 +772,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             ' <span class="jp-note">custom: median <input type="number" data-s="customMedian" min="60" max="4000" step="10" value="' + (+S.customMedian) + '" style="min-width:5em;width:5em"> ms, spread <select data-s="customSpread" style="min-width:6em">' +
               [[0.4, 'tight'], [0.65, 'normal'], [0.9, 'wide']].map(function(o) { return '<option value="' + o[0] + '"' + (Math.abs(+S.customSpread - o[0]) < 0.01 ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
               '</select></span></td></tr>' +
+            '<tr><td>Media clues</td><td><select data-s="mediaCredit" style="max-width:100%">' +
+              '<option value="none"' + (S.mediaCredit != 'broadcast' ? ' selected' : '') + '>Contestants get no credit (they ring in as broadcast, but their money doesn\'t move)</option>' +
+              '<option value="broadcast"' + (S.mediaCredit == 'broadcast' ? ' selected' : '') + '>Score them as on TV</option></select>' +
+              '<div class="jp-note" style="margin-top:3px">Clues built on a picture, video or audio file. The contestants had it on TV; the archive rarely has it, so you usually can\'t. Your own responses count either way.</div></td></tr>' +
             '<tr><td>Buzz-in key</td><td><select data-s="buzzKey">' +
               [[' ', 'Space'], ['b', 'B'], ['j', 'J'], ['k', 'K'], ['Shift', 'Shift']].map(function(o) { return '<option value="' + esc(o[0]) + '"' + (S.buzzKey == o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
               '</select></td></tr>' +
@@ -1272,7 +1284,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 '<td class="jp-result-said">' + (r.said ? '“' + esc(r.said) + '”' : '<i>(no response)</i>') + '</td>' +
                 '<td class="jp-result-correct">' + esc(r.correct) + '</td>' +
                 '<td class="jp-result-choice">' + opt('right', 'Right <span class="jp-plus">+' + stake + '</span>') + opt('none', 'No response <span class="jp-zero">$0</span>') + opt('wrong', 'Wrong <span class="jp-minus">−' + stake + '</span>') +
-                (r.others && r.others.length ? '<div class="jp-note jp-result-others">If you\'re not right, then: ' + r.others.map(function(o) { return esc(o.who) + ' ' + (o.right ? '<span class="jp-plus">+' : '<span class="jp-minus">−') + money(Math.abs(o.delta)) + '</span>'; }).join(', ') + '</div>' : '') +
+                (r.others && r.others.length ? '<div class="jp-note jp-result-others">If you\'re not right, then: ' + r.others.map(function(o) { return esc(o.who) + ' ' + (o.delta ? (o.right ? '<span class="jp-plus">+' : '<span class="jp-minus">−') + money(Math.abs(o.delta)) + '</span>' : (o.right ? 'right' : 'wrong') + ', no credit (media clue)'); }).join(', ') + '</div>' : '') +
                 '</td></tr>';
         }).join('');
         return '<p class="jp-note">If the judge got one of your responses wrong, fix it here. The money follows: yours, and that of anyone who rang in after you on that clue (right, and they never got the chance; wrong, and they play it out as broadcast). The ring-in order and control of the board stay as they happened.</p>' +
@@ -1886,7 +1898,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 userRec = res.rec || null; userAt = events.length;
                 if (userRec) {
                     // What the rest of the broadcast holds for this clue, should your response turn out wrong.
-                    userRec.others = info.sequence.filter(function(x) { return !responded[x.who]; }).map(function(x) { return { who: x.who, right: x.right, delta: x.right ? info.value : -info.value }; });
+                    userRec.others = info.sequence.filter(function(x) { return !responded[x.who]; }).map(function(x) { return { who: x.who, right: x.right, delta: (x.right ? 1 : -1) * (othersScore(info) ? info.value : 0) }; });
                     userRec.othersDelta = { };
                 }
                 if (res.correct) {
@@ -1919,18 +1931,19 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text));
                 await csay(ev.who, JPReader.responseToSpeech(text.replace(/^\(|\)$/g, '')), tok);
                 if (!alive(tok)) break;
+                let credit = othersScore(info) ? info.value : 0;
                 if (ev.right) {
-                    adjustScore(ev.who, info.value);
-                    if (userRec) userRec.othersDelta[ev.who] = info.value;
+                    adjustScore(ev.who, credit);
+                    if (userRec) userRec.othersDelta[ev.who] = credit;
                     setControl(ev.who);
-                    setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text) + ' &nbsp; <span class="jp-correct">' + esc(pick(HOST_RIGHT)) + '</span>');
+                    setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text) + ' &nbsp; <span class="jp-correct">' + esc(pick(HOST_RIGHT)) + '</span>' + (credit ? '' : noCreditNote()));
                     await say(pick(HOST_RIGHT), tok);
                     resolved = true;
                 } else {
-                    adjustScore(ev.who, -info.value);
-                    if (userRec) userRec.othersDelta[ev.who] = -info.value;
+                    adjustScore(ev.who, -credit);
+                    if (userRec) userRec.othersDelta[ev.who] = -credit;
                     markOut(ev.who, true);
-                    setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text) + ' &nbsp; <span class="jp-incorrect">' + esc(pick(HOST_WRONG)) + '</span>');
+                    setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text) + ' &nbsp; <span class="jp-incorrect">' + esc(pick(HOST_WRONG)) + '</span>' + (credit ? '' : noCreditNote()));
                     await say(pick(HOST_WRONG), tok);
                     if (!alive(tok)) break;
                     seqIdx++;
@@ -1955,7 +1968,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             // Those who actually followed you are the ones whose money moves with your result
             // (they are the archived sequence, played out as far as it went).
             let followed = events.slice(userAt);
-            if (followed.length) userRec.others = followed.map(function(e) { return { who: e.who, right: e.right, delta: e.right ? info.value : -info.value }; });
+            if (followed.length) userRec.others = followed.map(function(e) { return { who: e.who, right: e.right, delta: (e.right ? 1 : -1) * (othersScore(info) ? info.value : 0) }; });
             reconcileOthers(userRec);   // a "y" pressed while they were still answering
             if (G.pendingControl) setControl(controlFor(userRec));   // ...and the board goes with it
         }
@@ -2210,11 +2223,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             setSub('<span class="jp-who">' + esc(who) + ':</span> ' + esc(text));
             await csay(who, JPReader.responseToSpeech(text.replace(/^\(|\)$/g, '')), tok);
             if (!alive(tok)) return;
-            adjustScore(who, right ? wager : -wager);
+            let ddCredit = othersScore(info) ? wager : 0;
+            adjustScore(who, right ? ddCredit : -ddCredit);
             setSub('<span class="jp-who">' + esc(who) + ':</span> ' + esc(text) + ' &nbsp; <span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(right ? pick(HOST_RIGHT) : pick(HOST_WRONG)) + '</span>' +
-                   (right ? '' : ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>'));
-            await say((right ? pick(HOST_RIGHT) + ' That takes you to ' + money(G.scores[who]) + '.'
-                             : pick(HOST_WRONG) + ' The correct response: ' + info.phrase.toLowerCase() + ' ' + JPReader.responseToSpeech(info.abbrev) + '? That takes you down to ' + money(G.scores[who]) + '.'), tok);
+                   (right ? '' : ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>') + (ddCredit ? '' : noCreditNote()));
+            let takes = ddCredit ? (right ? ' That takes you to ' : ' That takes you down to ') + money(G.scores[who]) + '.' : ' No change in score on this one.';
+            await say((right ? pick(HOST_RIGHT) + takes
+                             : pick(HOST_WRONG) + ' The correct response: ' + info.phrase.toLowerCase() + ' ' + JPReader.responseToSpeech(info.abbrev) + '?' + takes), tok);
         }
         lightPodium(null);
         setHint('Click or press <span class="jp-key">' + buzzKeyName() + '</span> to continue.');

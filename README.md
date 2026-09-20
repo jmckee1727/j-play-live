@@ -90,7 +90,8 @@ when it is loaded.
   Accessibility → Spoken Content → System Voice → Manage Voices…, then download **Tom**,
   **Evan** or **Nathan** (English US, Enhanced) or **Alex**. Restart Chrome; the game picks the
   best installed voice automatically.
-* Start on **Easy** (contestants ring in about a second after the lights; Medium is half a second, Hard 0.3 s, Champion 0.2 s — real contestants are in that range).
+* Start on **Easy** (contestants ring in about a second and a half after the lights; Medium is half a second, Hard 0.3 s, Champion 0.2 s — real contestants are in that range).
+* **Media clues** — clues built on a picture, video or audio file, which the archive rarely has — score for the contestants as on TV only if you choose so in Settings. By default they ring in and respond as broadcast, control of the board follows, but their money doesn't move (the game says "no change in score"); your own responses on those clues count either way.
 
 ## How to play
 

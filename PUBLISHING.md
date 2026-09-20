@@ -1,43 +1,25 @@
 # Publishing J-Play Live to the Chrome Web Store
 
-## Already done (in this folder)
+## Status
 
-- **The package:** `dist/j-play-live-<version>.zip`, built by `./build.sh` from exactly the files
-  the extension uses (about 6 MB zipped; the 21 MB WebAssembly speech runtime is most of it).
-- **Screenshots:** `store/screenshots/1-clue.png` … `5-edit-results.png`, 1280×800, ready to upload.
-- **Listing text:** `store/listing.md` — the summary (under 132 characters), the description,
-  and the answers for the privacy-practices form.
-- **Privacy policy:** `store/privacy-policy.md` and the same text as a standalone web page,
-  `store/privacy-policy.html`, ready to host (the contact line points at the store listing's
-  developer contact and the project's GitHub issues page).
-- **Icons:** `icons/128.png` is in the package and is what the store shows.
+**Submitted for review on September 19, 2026** (version 0.7.5), set to publish automatically once
+it passes. Store item ID `knmdbebngmkekoeoaoekogeaipinklnp`; once live the listing will be at
+https://chromewebstore.google.com/detail/knmdbebngmkekoeoaoekogeaipinklnp. Publisher account
+jmckee1727@gmail.com (contact email verified, declared a non-trader account). The dashboard is
+https://chrome.google.com/webstore/devconsole.
 
-## Your part (needs your Google account)
-
-1. **Developer account.** Sign in at https://chrome.google.com/webstore/devconsole and pay the
-   one-time $5 registration fee. Verify the contact email. (This is the only step that costs
-   anything.)
-2. **Privacy policy URL — done.** The repository is https://github.com/jmckee1727/j-play-live with
-   GitHub Pages on, so the policy is served at
-   https://jmckee1727.github.io/j-play-live/store/privacy-policy.html and the support link is
-   https://github.com/jmckee1727/j-play-live/issues.
-3. **Upload.** Developer Dashboard → **New item** → upload the zip from `dist/`.
-4. **Store listing:** paste the summary and description from `store/listing.md`, upload the
-   five screenshots from `store/screenshots/`, category "Fun", language English.
-5. **Privacy practices:** answer from the "Privacy practices form" section of `store/listing.md`
-   (single purpose, permission justifications, no remote code, no data collected), and paste
-   the privacy policy URL.
-6. **Distribution:** public, all regions — or **unlisted** first, which gives you a store link
-   to share with friends before going fully public (same review either way).
-7. **Submit for review.** A first version usually takes a few days. If the reviewer asks why
-   the package includes a 21 MB WebAssembly file, the answer is in the listing text: it is the
-   on-device speech runtime, and no code is loaded remotely.
+What was submitted: the package from `dist/j-play-live-0.7.5.zip` (also kept on the `packages`
+branch of the repository and attached to the v0.7.5 GitHub release), the listing text from
+`store/listing.md` (category Games, language English), the five screenshots, the small and
+marquee promo tiles (`store/promo-*.png`), the privacy form (no remote code, no data collected),
+the privacy policy URL, and short test instructions for the reviewer.
 
 ## Updates later
 
-Bump `"version"` in `manifest.json` (the store rejects a version it has already seen), run
-`./build.sh`, and upload the new zip as an update to the existing item. Users get it
-automatically.
+Bump `"version"` in `manifest.json` (the store rejects a version it has already seen — and its
+`description` must stay under 132 characters), run `./build.sh`, then in the dashboard open the
+item → Package → **Upload new package** with the new zip, and Submit for review again. Users get
+the update automatically. Commit the new zip to the `packages` branch too if you want the record.
 
 ## Things to keep in mind
 

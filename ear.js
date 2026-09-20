@@ -69,6 +69,8 @@ var JPEar = (function() {
     // device change), turning into exact zeros while a fresh one would be fine;
     // then, or when the track ends, the mic is reopened.
     let closeTimer = null;
+    let micPref = 'auto';                                        // 'auto' | 'default' | a device id (see JPAudio.micChoice)
+    function setMicPreference(p) { micPref = p || 'auto'; }
     function openMic() {
         if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
         if (proc) return Promise.resolve(true);
@@ -78,9 +80,18 @@ var JPEar = (function() {
     }
     async function openMicNow() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { state.micError = 'no microphone access'; return false; }
-        let st;
+        let st, choice = null;
+        try { choice = (typeof JPAudio !== 'undefined' && JPAudio.micChoice) ? await JPAudio.micChoice(micPref) : null; } catch (e) { choice = null; }
+        // Echo cancellation only when the sound comes out of speakers the mic can
+        // hear; with headphones it's needless, and on a Mac engaging it can
+        // reconfigure the output for a moment (an audible hiccup).
+        let aec = !(choice && choice.headphones);
+        let base = { echoCancellation: aec, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
         try {
-            st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+            if (choice && choice.id && choice.id != 'default') {
+                try { st = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({ deviceId: { exact: choice.id } }, base) }); }
+                catch (e) { mlog('mic ' + choice.label + ' could not be opened (' + (e && e.name) + '); using the default'); choice = null; st = await navigator.mediaDevices.getUserMedia({ audio: base }); }
+            } else st = await navigator.mediaDevices.getUserMedia({ audio: base });
         } catch (e) { state.micError = e && e.name == 'NotAllowedError' ? 'not-allowed' : (e && e.message) || 'mic error'; mlog('mic open failed: ' + state.micError); return false; }
         if (proc) { st.getTracks().forEach(function(t) { t.stop(); }); return true; }   // someone else opened it meanwhile
         stream = st;
@@ -106,7 +117,7 @@ var JPEar = (function() {
         proc.connect(ctx.destination);                            // Chrome only runs a ScriptProcessor that is connected; it outputs silence
         zeroRun = 0; pendLen = 0;
         let ts = (track && track.getSettings) ? track.getSettings() : { };
-        mlog('mic open: ' + (track ? track.label : '?') + ' (' + (ts.sampleRate || '?') + ' Hz in, context ' + ctx.sampleRate + ' Hz ' + ctx.state + ')');
+        mlog('mic open: ' + (track ? track.label : '?') + ' (' + (ts.sampleRate || '?') + ' Hz in, context ' + ctx.sampleRate + ' Hz ' + ctx.state + '; ' + (choice ? choice.why : 'default') + (choice && choice.outLabel ? '; output ' + choice.outLabel : '') + '; echo cancellation ' + (aec ? 'on' : 'off') + ')');
         if (track) {
             track.onmute = function() { mlog('mic track muted by the system'); };
             track.onunmute = function() { mlog('mic track unmuted'); };
@@ -124,10 +135,12 @@ var JPEar = (function() {
         ring.fill(0); ringPos = 0;                                // no stale pre-roll next time
         if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
     }
-    // Close a little after the last session ends, so back-to-back sessions reuse the stream.
-    function releaseMic() {
+    // Close when the last session ends -- at once, or after a short linger for
+    // loops that start the next session right away (picking by voice).
+    function releaseMic(lingerMs) {
         if (session || closeTimer || !stream) return;
-        closeTimer = setTimeout(function() { closeTimer = null; if (!session) closeMic(); }, 400);
+        if (!lingerMs) { closeMic(); return; }
+        closeTimer = setTimeout(function() { closeTimer = null; if (!session) closeMic(); }, lingerMs);
     }
     function micLabel() { let t = stream && stream.getAudioTracks()[0]; return t ? t.label : ''; }
     function micState() {
@@ -210,9 +223,9 @@ var JPEar = (function() {
     function listen(ms, onInterim, opts) {
         opts = opts || { };
         let handle = { onInterim: null, done: false };
-        let stopFn = function() { };
+        let stopFn = function() { }, abortFn = function() { };
         let p = new Promise(function(resolve) {
-            let text = '', segments = [ ], gotFinal = false, err = null, done = false, pending = 0, stopping = false;
+            let text = '', segments = [ ], gotFinal = false, gotContent = false, err = null, done = false, pending = 0, stopping = false;
             let s = {
                 inSpeech: false, buf: [ ], bufLen: 0, speechFrames: 0, silentFrames: 0, started: performance.now(), lastLevel: 0,
                 frame: function(frame, e) {
@@ -253,7 +266,8 @@ var JPEar = (function() {
                         text = segments.map(function(x) { return x[0]; }).join(' ');
                         let cb = handle.onInterim || onInterim;
                         if (cb) { try { cb(text, true, segments.slice()); } catch (e) { } }
-                        if (opts.endOnFinal) finish();
+                        // One real phrase is the answer; a bare "what is" keeps the mic open for the rest.
+                        if (opts.endOnFinal && !(typeof JPJudge !== 'undefined' && JPJudge.contentFree(t))) { gotContent = true; finish(); }
                     }
                     if (stopping && !pending) finish();
                 }, function(e) {
@@ -268,7 +282,7 @@ var JPEar = (function() {
                 done = true; handle.done = true;
                 clearTimeout(timer);
                 if (session === s) session = null;
-                releaseMic();
+                releaseMic(opts.linger);
                 resolve({ text: text, alternatives: segments.length ? segments[segments.length - 1].slice() : [ ], final: gotFinal, error: err, segments: segments });
             }
             let timer = setTimeout(function() { stopFn(); }, ms);
@@ -276,8 +290,15 @@ var JPEar = (function() {
                 if (done || stopping) return;
                 stopping = true;
                 // Hear out what was being said -- unless one phrase was all that was wanted and it's in.
-                if (s.inSpeech && s.speechFrames >= 3 && !(opts.endOnFinal && gotFinal)) s.flush(true);
+                if (s.inSpeech && s.speechFrames >= 3 && !(opts.endOnFinal && gotContent)) s.flush(true);
                 if (!pending) finish(); else setTimeout(finish, 4000);     // but don't wait forever for it
+            };
+            abortFn = function() {
+                if (done) return;
+                stopping = true;
+                s.inSpeech = false; s.buf = [ ]; s.bufLen = 0;           // whatever was in progress is dropped
+                finish();
+                closeMic();
             };
             openMic().then(function(ok) {
                 if (!ok) { err = state.micError || 'audio-capture'; if (err == 'not-allowed') err = 'not-allowed'; finish(); return; }
@@ -288,6 +309,7 @@ var JPEar = (function() {
             });
         });
         p.stop = function() { stopFn(); };
+        p.abort = function() { abortFn(); };
         p.handle = handle;
         Object.defineProperty(p, 'onInterim', { set: function(f) { handle.onInterim = f; }, get: function() { return handle.onInterim; } });
         Object.defineProperty(p, 'done', { get: function() { return handle.done; } });
@@ -298,7 +320,7 @@ var JPEar = (function() {
 
     return {
         available: available, caps: caps, load: load, unload: unload, listen: listen, onStatus: onStatus,
-        openMic: openMic, closeMic: closeMic, micLabel: micLabel, micState: micState, active: active,
+        openMic: openMic, closeMic: closeMic, micLabel: micLabel, micState: micState, active: active, setMicPreference: setMicPreference,
         get state() { return state; }, get ready() { return state.loaded; }, get level() { return level; }, get noise() { return noise; },
         set enabled(v) { state.enabled = !!v; }, get enabled() { return state.enabled; },
         log: [ ],

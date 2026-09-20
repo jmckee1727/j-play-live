@@ -182,5 +182,15 @@ var JPJudge = (function() {
         return first || { correct: false, reason: 'no answer', normalized: '', text: '' };
     }
 
-    return { normalize: normalize, variants: variants, judge: judge, judgeAny: judgeAny, similarity: similarity, stripHtml: stripHtml };
+    // "What is..." and nothing more: a question stem, fillers, or silence. Not a
+    // response yet -- the player is still thinking, so the window stays open.
+    const STEM_RE = /^(?:(?:what|who|where|when|which|how|why)(?:s|re)?(?:\s+(?:is|are|was|were|it|its))*\s*)+/;
+    const FILLER = /^(?:is|are|was|were|it|its|the|a|an|um+|uh+|uhm+|er+|erm+|hm+|hmm+|mm+|ah+|oh+|ooh+|like|well|so|okay|ok|yeah|yes|no|let|lets|see|me|think|i|ill|say|go|with|maybe|probably|that|thats|this|wait|hold|on|and|or|but)$/;
+    function contentFree(text) {
+        let t = String(text || '').toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').replace(/'/g, '').replace(/\s+/g, ' ').trim();
+        t = t.replace(STEM_RE, '');
+        return t.split(' ').filter(Boolean).every(function(w) { return FILLER.test(w); });
+    }
+
+    return { normalize: normalize, variants: variants, judge: judge, judgeAny: judgeAny, similarity: similarity, stripHtml: stripHtml, contentFree: contentFree };
 })();

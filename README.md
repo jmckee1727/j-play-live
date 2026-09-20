@@ -50,14 +50,27 @@ results on names), executed by ONNX Runtime in the same hidden extension page as
 the same every time, doesn't depend on Google's speech service, and nothing you say leaves the
 machine. Under **Recognition** in Settings, click **Download the studio ear**; it loads with each
 game. Whichever recognizer is in use, the microphone comes on only when you ring in (and while
-you pick clues by voice on your own board), never while someone else has the clue; the first phrase
-you finish is your response and is judged on the spot, right or wrong; and the mic is released as
-soon as you've answered (an open mic also changes how Bluetooth headphones sound). The studio ear
-cuts the feed into utterances with a simple energy detector, watches the feed while it's open, and
-reopens the mic if the stream goes dead (a Mac with AirPods can do that). Chrome's built-in
-recognizer remains available as the other option and is used automatically until the studio ear
-is downloaded. **Mic log** in the same section shows what the recognizer and the microphone did on
-recent clues, which is the first thing to look at if answers aren't being heard.
+you pick clues by voice on your own board), never while someone else has the clue, and in Final
+Jeopardy! only after you ring in to respond. The first phrase with something in it is your
+response and is judged on the spot, right or wrong; a bare "What is…" or an "um" isn't a response
+yet, so the mic stays on for the rest of it. The mic is released the moment you've answered.
+
+**Microphone** (Settings) chooses which mic the studio ear opens. *Automatic* takes the system
+default, except when that's a Bluetooth headset and there's a built-in mic: then the built-in one,
+because opening a headset's own microphone drops it into its low-quality call mode — which is the
+"the sound changes while the game listens" effect with AirPods. With headphones on, echo
+cancellation is also left off (the sound can't reach the mic, and engaging it can reconfigure the
+output for a moment). **Playback** routes the game's own sounds — the studio voice, effects, music —
+to a chosen output; a system voice always follows the system default. Chrome's built-in recognizer
+always uses the system default microphone (System Settings → Sound → Input), so the choice above
+applies to the studio ear only.
+
+The studio ear cuts the feed into utterances with a simple energy detector, watches the feed while
+it's open, and reopens the mic if the stream goes dead (a Mac with AirPods can do that). Chrome's
+built-in recognizer remains available as the other option and is used automatically until the
+studio ear is downloaded. **Mic log** in the same section shows what the recognizer and the
+microphone did on recent clues (which device, why, and whether it was reopened), which is the
+first thing to look at if answers aren't being heard.
 
 Pieces: `offscreen/ear.js` runs Whisper (through `vendor/transformers.min.js`); `ear.js` (`JPEar`)
 captures the microphone on the game page and cuts it into utterances; `JPAudio.listen` routes to it
@@ -85,6 +98,7 @@ when it is loaded.
 | --- | --- |
 | `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. |
 | `Enter` | Lock in a typed response or a wager (also moves on) |
+| `Space` or a click during the Final Jeopardy! music | Ring in to respond: the music ducks, the mic opens, and your first phrase is locked in. (Typing works throughout; with the box empty, Space rings in.) |
 | `y` / `n` | Overrule the judge on your last response (until the next clue). The money, the rebound and control of the board all follow. |
 | **Rewind** (pause menu) | Every clue played so far, in order. Go back to the moment before any of them: that clue and everything after it are played again with the board, the money and control as they were; your responses from that point are cleared. |
 | **Edit results** (pause menu) | Every response of yours, each with Right / No response / Wrong. Change one and the money follows: yours, and that of anyone who rang in after you on that clue (mark yourself right and the rebound never happened; mark yourself wrong and it plays out as broadcast). The ring-in order and control of the board stay as they happened. |

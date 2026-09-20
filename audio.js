@@ -210,6 +210,7 @@ var JPAudio = (function() {
     function audioCtx() {
         if (!ctx) {
             try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ctx = null; }
+            if (ctx && outSink && ctx.setSinkId) { try { ctx.setSinkId(outSink).catch(function() { }); } catch (e) { } }
         }
         if (ctx && ctx.state == 'suspended' && !JPClock.paused)
             ctx.resume().catch(function() { });
@@ -238,6 +239,7 @@ var JPAudio = (function() {
                 if (!r.ok) return tryExt(i + 1);
                 let a = new Audio(url);
                 a.preload = 'auto';
+                if (outSink && a.setSinkId) { try { a.setSinkId(outSink).catch(function() { }); } catch (e) { } }
                 fileCache[name] = a;
                 return a;
             }).catch(function() { return tryExt(i + 1); });
@@ -363,6 +365,7 @@ var JPAudio = (function() {
         master.gain.setValueAtTime(0.0001, c.currentTime);
         master.gain.exponentialRampToValueAtTime(0.62, c.currentTime + 0.4);   // under the host's voice, not over it
         master.connect(c.destination);
+        loopGain = master;
         let beat = 60 / THINK_BPM, bar = beat * 4;
         let t0 = c.currentTime + 0.05;
         let oscs = [ ];
@@ -410,6 +413,7 @@ var JPAudio = (function() {
     let loopName = null;
     let loopWasRunning = false;
     let musicStop = null;
+    let loopGain = null, ducked = false;
     function startLoop(name) {
         stopLoop();
         if (!enabled) return;
@@ -430,7 +434,16 @@ var JPAudio = (function() {
     function stopLoop() {
         if (loopAudio) { try { loopAudio.pause(); loopAudio.loop = false; } catch (e) { } loopAudio = null; }
         if (musicStop) { musicStop(); musicStop = null; }
-        loopName = null;
+        loopName = null; loopGain = null; ducked = false;
+    }
+    // Turn the music down (to a quarter) while the microphone listens, and back up.
+    function duckLoop(on) {
+        ducked = !!on;
+        let level = on ? 0.25 : 1;
+        if (loopAudio) { try { loopAudio.volume = (loopName == 'think' ? 0.7 : 1) * level; } catch (e) { } }
+        if (loopGain && ctx) {
+            try { let now = ctx.currentTime; loopGain.gain.cancelScheduledValues(now); loopGain.gain.setValueAtTime(Math.max(loopGain.gain.value, 0.0001), now); loopGain.gain.exponentialRampToValueAtTime(0.62 * level, now + 0.3); } catch (e) { }
+        }
     }
     JPClock.onPause(function() {
         loopWasRunning = !!loopName;
@@ -455,12 +468,70 @@ var JPAudio = (function() {
     // Never rejects. The returned promise has a .stop() to end early.
     // opts.endOnFinal: resolve as soon as the recognizer finalizes a phrase
     // (right for a 5-second answer); otherwise keep listening until stopped.
+    // ---- audio devices ---------------------------------------------------
+    // Chrome labels devices after the microphone has been allowed once
+    // ("MacBook Pro Microphone (Built-in)", "AirPods (Bluetooth)"); the
+    // system defaults are listed again as "Default - ...".
+    const HEADSET_RE = /bluetooth|airpods|beats|headphone|headset|earbuds?|\bbuds\b|\bpods\b|\bBT\b/i;
+    const BUILTIN_RE = /built-in|internal|macbook|imac|mac mini|mac studio|mac pro|\bpc\b|realtek|array/i;
+    function devices() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return Promise.resolve({ inputs: [ ], outputs: [ ], labeled: false });
+        return navigator.mediaDevices.enumerateDevices().then(function(list) {
+            let inputs = [ ], outputs = [ ];
+            for (let d of list) {
+                let e = { id: d.deviceId, label: d.label || '', group: d.groupId, isDefault: d.deviceId == 'default' };
+                if (d.kind == 'audioinput') inputs.push(e); else if (d.kind == 'audiooutput') outputs.push(e);
+            }
+            return { inputs: inputs, outputs: outputs, labeled: inputs.some(function(d) { return !!d.label; }) };
+        }).catch(function() { return { inputs: [ ], outputs: [ ], labeled: false }; });
+    }
+    function defaultOf(list) {
+        let d = list.find(function(x) { return x.isDefault; });
+        if (!d) return null;
+        let label = d.label.replace(/^default\s*[-\u2013\u2014]\s*/i, '');
+        let real = list.find(function(x) { return !x.isDefault && x.label && x.label == label; }) || (d.group ? list.find(function(x) { return !x.isDefault && x.group == d.group; }) : null);
+        return { id: real ? real.id : 'default', label: label || (real ? real.label : ''), real: real };
+    }
+    // Which microphone to open. pref: 'auto', 'default', or a device id.
+    // 'auto' = the system default, unless that's a Bluetooth headset and a
+    // built-in mic exists: then the built-in one, so the headphones aren't
+    // dropped to their low-quality call mode every time the game listens.
+    function micChoice(pref) {
+        return devices().then(function(dv) {
+            let out = defaultOf(dv.outputs), inp = defaultOf(dv.inputs);
+            let headphones = !!(out && HEADSET_RE.test(out.label));
+            let res = { id: null, label: inp ? inp.label : '', why: 'the system default microphone', headphones: headphones, outLabel: out ? out.label : '' };
+            if (pref && pref != 'auto' && pref != 'default') {
+                let d = dv.inputs.find(function(x) { return x.id == pref; });
+                if (d) return Object.assign(res, { id: d.id, label: d.label, why: 'chosen in Settings' });
+                res.why = 'the system default microphone (the one chosen in Settings is not connected)';
+                return res;
+            }
+            if (pref == 'auto' && inp && HEADSET_RE.test(inp.label)) {
+                let builtin = dv.inputs.find(function(x) { return !x.isDefault && BUILTIN_RE.test(x.label) && !HEADSET_RE.test(x.label); });
+                if (builtin) return Object.assign(res, { id: builtin.id, label: builtin.label, why: 'the built-in microphone, because the default (' + inp.label + ') is a headset' });
+            }
+            return res;
+        });
+    }
+    // Route the game's own sounds (the studio voice, effects, music) to an
+    // output device; '' or 'default' = the system default. The system voice
+    // (speechSynthesis) always follows the system default.
+    let outSink = '';
+    function setOutput(id) {
+        outSink = (id && id != 'default') ? id : '';
+        try { if (ctx && ctx.setSinkId) ctx.setSinkId(outSink).catch(function() { }); } catch (e) { }
+        for (let k in fileCache) { let a = fileCache[k]; if (a && a.setSinkId) { try { a.setSinkId(outSink).catch(function() { }); } catch (e) { } } }
+    }
+    function outputRoutable() { return !!(window.AudioContext && AudioContext.prototype.setSinkId); }
+
     // Opens the microphone for a moment to report which input it is and how
     // loud speech arrives (peak 0..1). Speech recognition itself has no gain
     // control; a low reading means the system input volume, not the game.
-    function sampleInputLevel(ms) {
+    function sampleInputLevel(ms, deviceId) {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve(null);
-        return navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+        let constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
+        return navigator.mediaDevices.getUserMedia(constraints).catch(function() { return navigator.mediaDevices.getUserMedia({ audio: true }); }).then(function(stream) {
             let track = stream.getAudioTracks()[0];
             let label = track ? track.label : '';
             let AC = window.AudioContext || window.webkitAudioContext;
@@ -488,7 +559,7 @@ var JPAudio = (function() {
         // The studio ear (on-device Whisper) takes over when it is loaded and chosen.
         if (typeof JPEar !== 'undefined' && JPEar.active()) return JPEar.listen(ms, onInterim, opts);
         let SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        let stopFn = function() { };
+        let stopFn = function() { }, abortFn = function() { };
         let handle = { onInterim: null, done: false };
         let entry = { engine: 'chrome', at: new Date().toLocaleTimeString(), ms: ms, events: [ ], result: '' };
         let t0 = performance.now();
@@ -500,7 +571,7 @@ var JPAudio = (function() {
             try { rec = new SR(); } catch (e) { logEv('init failed'); resolve({ text: '', alternatives: [ ], final: false, error: 'init' }); return; }
             rec.lang = 'en-US';
             rec.interimResults = true;
-            rec.continuous = !opts.endOnFinal;
+            rec.continuous = true;                            // a phrase that's only "what is..." must not end the session
             rec.maxAlternatives = 5;
             rec.onstart = function() { logEv('start'); };
             rec.onaudiostart = function() { logEv('audio'); };
@@ -547,14 +618,17 @@ var JPAudio = (function() {
                 let cb = handle.onInterim || onInterim;
                 if (cb) cb(best.trim(), gotFinal, segments, text.trim());
                 if (finalCount) logEv('result #' + finalCount + ' "' + text.trim().slice(0, 40) + '"');
-                if (gotFinal && opts.endOnFinal) finish();
+                // One real phrase is the answer; a bare "what is" or "um" keeps listening.
+                if (gotFinal && opts.endOnFinal && segments.some(function(seg) { return !(typeof JPJudge !== 'undefined' && JPJudge.contentFree(seg[0])); })) finish();
             };
             rec.onerror = function(e) { err = e.error; logEv('error ' + e.error); if (e.error == 'not-allowed' || e.error == 'service-not-allowed' || e.error == 'audio-capture') finish(); };
             rec.onend = function() { if (!done) { /* Chrome ended it early (silence); keep what we have. */ finish(); } };
             stopFn = function() { try { rec.stop(); } catch (e) { } setTimeout(finish, 300); };
+            abortFn = finish;                                 // release the microphone right now; keep what was heard
             try { rec.start(); } catch (e) { err = 'start'; finish(); }
         });
         p.stop = function() { stopFn(); };
+        p.abort = function() { abortFn(); };
         p.handle = handle;                                  // .onInterim (swap the callback), .done
         Object.defineProperty(p, 'onInterim', { set: function(f) { handle.onInterim = f; }, get: function() { return handle.onInterim; } });
         Object.defineProperty(p, 'done', { get: function() { return handle.done; } });
@@ -576,6 +650,8 @@ var JPAudio = (function() {
         play: play,
         startLoop: startLoop,
         stopLoop: stopLoop,
+        duckLoop: duckLoop,
+        devices: devices, micChoice: micChoice, setOutput: setOutput, outputRoutable: outputRoutable,
         recognitionSupported: recognitionSupported,
         listen: listen, sampleInputLevel: sampleInputLevel, get micLog() { return micLog; },
         SFX_FILES: SFX_FILES,

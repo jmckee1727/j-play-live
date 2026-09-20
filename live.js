@@ -48,6 +48,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         neuralVoice: 'am_michael',
         neuralDevice: 'auto',         // auto | webgpu | wasm
         onboardedVoice: false,        // the one-time studio-voice notice has been seen
+        micDevice: 'auto',            // which microphone the studio ear opens: 'auto' (built-in when a headset is the default), 'default', or a device id
+        outDevice: 'default',         // where the game's own sounds play: 'default' (system) or a device id
         earEngine: 'studio',          // 'studio' (on-device Whisper, when downloaded) or 'chrome' (Chrome's built-in recognizer)
         earSize: 'base',              // 'base' | 'small'
         earDevice: 'auto',            // 'auto' | 'webgpu' | 'wasm'
@@ -72,7 +74,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     let G = null;          // game state
     let U = null;          // UI element refs
     let runToken = 0;
-    let handlers = { buzz: null, override: null, cont: null, pick: null };
+    let handlers = { buzz: null, override: null, cont: null, pick: null, submit: null, inputBuzz: null };
     let voiceMap = { };    // contestant -> SpeechSynthesisVoice
     let hostVoice = null;
 
@@ -139,9 +141,15 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             S = Object.assign({ }, DEFAULTS, saved);
         } catch (e) { S = Object.assign({ }, DEFAULTS); }
+        applyDevices();
     }
     function saveSettings() {
         try { localStorage.setItem('jpLiveSettings', JSON.stringify(S)); } catch (e) { }
+        applyDevices();
+    }
+    function applyDevices() {
+        if (typeof JPEar !== 'undefined' && JPEar.setMicPreference) JPEar.setMicPreference(S.micDevice || 'auto');
+        if (JPAudio.setOutput) JPAudio.setOutput(S.outDevice || 'default');
     }
 
     // mult scales the median for this particular ring-in (clue difficulty, rebounds).
@@ -354,6 +362,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         U.input.addEventListener('keydown', function(e) {
             if (e.key == 'Enter') { e.preventDefault(); e.stopPropagation(); if (handlers.submit) handlers.submit(U.input.value); }
             else if (e.key == 'Escape') { e.preventDefault(); e.stopPropagation(); showPauseMenu(); }
+            else if (handlers.inputBuzz && !U.input.value && isBuzz(e)) { e.preventDefault(); e.stopPropagation(); handlers.inputBuzz(); }   // Final Jeopardy!: the buzz key in an empty box rings in
             else e.stopPropagation();
         });
     }
@@ -574,7 +583,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function restartPick() {
         runToken++;
         let tok = runToken;
-        handlers = { buzz: null, override: null, cont: null, pick: null, submit: null };
+        handlers = { buzz: null, override: null, cont: null, pick: null, submit: null, inputBuzz: null };
         if (pickListener) { try { pickListener.stop(); } catch (e) { } pickListener = null; }
         JPAudio.stopSpeaking();
         runGame(tok, G.round, true);
@@ -763,6 +772,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
               '<option value="typed"' + (S.answerMode == 'typed' ? ' selected' : '') + '>Type it</option></select>' +
               ' <button class="jp-btn jp-secondary jp-mic-test" style="padding:3px 10px;font-size:0.9em">Test microphone</button> <span class="jp-mic-result jp-note"></span>' +
               '<div style="margin-top:4px"><label><input type="checkbox" data-s="voicePick"' + (S.voicePick ? ' checked' : '') + '>Pick clues by voice too, when you have the board ("Science for 600", "same category, 800"); clicking always works</label></div></td></tr>' +
+            '<tr><td>Microphone</td><td><select class="jp-mic-device" style="max-width:100%"><option value="auto">Automatic</option></select>' +
+              '<div class="jp-mic-device-note jp-note" style="margin-top:3px">Automatic uses the system default, or the built-in microphone when a Bluetooth headset is the default — so your headphones don\'t drop to call quality every time the game listens. (Chrome\'s built-in recognizer always uses the system default microphone.)</div></td></tr>' +
             '<tr><td>Recognition</td><td>' + earSection() + '</td></tr>' +
             '<tr><td>Host voice</td><td>' + voiceSection(vopts) + '</td></tr>' +
             '<tr><td>Reading speed</td><td><input type="range" class="jp-rate" min="0.6" max="1.4" step="0.05" value="' + (S.rate / BASE_RATE).toFixed(2) + '"> <span class="jp-rate-val">' + (S.rate / BASE_RATE).toFixed(2) + '×</span></td></tr>' +
@@ -771,6 +782,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<tr><td>Read categories</td><td><label><input type="checkbox" data-s="readCategories"' + (S.readCategories ? ' checked' : '') + '>Host reads the categories at the start of each round</label></td></tr>' +
             '<tr><td>Uppercase clues</td><td><label><input type="checkbox" data-s="upper"' + (S.upper ? ' checked' : '') + '>Show clue text in capitals, like the show</label></td></tr>' +
             '<tr><td>Sound effects</td><td><label><input type="checkbox" data-s="sfx"' + (S.sfx ? ' checked' : '') + '>On (drop files into the extension\'s <code>sounds/</code> folder to replace the built-in tones)</label></td></tr>' +
+            '<tr><td>Playback</td><td><select class="jp-out-device" style="max-width:100%"><option value="default">System default</option></select>' +
+              '<span class="jp-out-device-note jp-note" style="margin-left:8px">the studio voice, effects and music (a system voice always follows the system default)</span></td></tr>' +
             '<tr><td>Time to answer</td><td><input type="number" data-s="answerSeconds" min="2" max="15" value="' + (+S.answerSeconds) + '" style="min-width:5em;width:5em"> s after buzzing &nbsp; ' +
               'ring-in window <input type="number" data-s="buzzWindowSeconds" min="2" max="15" value="' + (+S.buzzWindowSeconds) + '" style="min-width:5em;width:5em"> s &nbsp; ' +
               'lockout <input type="number" data-s="lockoutMs" min="0" max="2000" step="50" value="' + (+S.lockoutMs) + '" style="min-width:5em;width:5em"> ms</td></tr>' +
@@ -1036,6 +1049,42 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         JPNeural.prefetch(lines.map(function(t) { return JPReader.forNeural(t, 'line'); }), S.neuralVoice, S.rate, 50);
     }
 
+    // The Microphone and Playback lists. Labels appear once the mic has been allowed.
+    function fillDeviceSelects(panel) {
+        let ms = panel.querySelector('.jp-mic-device'), os = panel.querySelector('.jp-out-device');
+        if (!ms && !os) return;
+        JPAudio.devices().then(function(dv) {
+            if (!panel.isConnected) return;
+            let opt = function(v, label, cur) { return '<option value="' + esc(v) + '"' + (cur == v ? ' selected' : '') + '>' + esc(label) + '</option>'; };
+            if (ms) {
+                let cur = S.micDevice || 'auto';
+                let html = opt('auto', 'Automatic', cur) + opt('default', 'System default microphone', cur);
+                for (let d of dv.inputs) if (!d.isDefault && d.label) html += opt(d.id, d.label, cur);
+                if (!dv.labeled) html += '<option value="" disabled>(allow the microphone — Test microphone — to list them)</option>';
+                if (cur != 'auto' && cur != 'default' && !dv.inputs.some(function(d) { return d.id == cur; })) html += opt(cur, '(chosen microphone, not connected)', cur);
+                ms.innerHTML = html;
+                describeMicChoice(panel);
+            }
+            if (os) {
+                let cur = S.outDevice || 'default';
+                let html = opt('default', 'System default', cur);
+                if (JPAudio.outputRoutable()) for (let d of dv.outputs) if (!d.isDefault && d.label) html += opt(d.id, d.label, cur);
+                if (cur != 'default' && !dv.outputs.some(function(d) { return d.id == cur; })) html += opt(cur, '(chosen output, not connected)', cur);
+                os.innerHTML = html;
+                os.disabled = !JPAudio.outputRoutable();
+            }
+        });
+    }
+    function describeMicChoice(panel) {
+        let note = panel.querySelector('.jp-mic-device-note');
+        if (!note || !JPAudio.micChoice) return;
+        JPAudio.micChoice(S.micDevice || 'auto').then(function(c) {
+            if (!panel.isConnected || !c) return;
+            let base = 'Automatic uses the system default, or the built-in microphone when a Bluetooth headset is the default — so your headphones don\'t drop to call quality every time the game listens. (Chrome\'s built-in recognizer always uses the system default microphone.)';
+            note.textContent = (c.label ? 'The studio ear will open ' + c.label + ' (' + c.why + ')' + (c.outLabel ? '; sound plays through ' + c.outLabel : '') + '. ' : '') + base;
+        });
+    }
+
     function bindSettingsForm(panel) {
         // Voice engine radios + studio voice controls
         panel.querySelectorAll('input[name="jp-engine"]').forEach(function(r) {
@@ -1060,6 +1109,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (!earCaps) earCheck(panel); else refreshEarUI(panel);
             let offE = JPEar.onStatus(function() { if (panel.isConnected) refreshEarUI(panel); else offE(); });
         }
+        fillDeviceSelects(panel);
+        let onDev = function() { if (panel.isConnected) fillDeviceSelects(panel); else if (navigator.mediaDevices) navigator.mediaDevices.removeEventListener('devicechange', onDev); };
+        if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', onDev);
+        let ms = panel.querySelector('.jp-mic-device');
+        if (ms) ms.addEventListener('change', function() { S.micDevice = ms.value || 'auto'; saveSettings(); describeMicChoice(panel); });
+        let os = panel.querySelector('.jp-out-device');
+        if (os) os.addEventListener('change', function() { S.outDevice = os.value || 'default'; saveSettings(); });
         let chk = panel.querySelector('.jp-neural-check');
         if (chk) chk.onclick = function() { neuralCheck(panel); };
         let dl = panel.querySelector('.jp-neural-download');
@@ -1101,7 +1157,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let out = panel.querySelector('.jp-mic-result');
             if (!JPAudio.recognitionSupported()) { out.textContent = 'Speech recognition is not available in this browser.'; return; }
             out.textContent = 'Listening for 4 seconds — say something…';
-            let level = JPAudio.sampleInputLevel(4000);      // which mic, and how loud it comes in
+            let earOn = typeof JPEar !== 'undefined' && JPEar.active();
+            // which mic, and how loud it comes in (the studio ear's choice; Chrome's recognizer always takes the system default)
+            let level = (JPAudio.micChoice ? JPAudio.micChoice(earOn ? (S.micDevice || 'auto') : 'default') : Promise.resolve(null)).then(function(c) {
+                return JPAudio.sampleInputLevel(4000, c && c.id && c.id != 'default' ? c.id : null).then(function(lv) { if (lv && c) lv.why = c.why; return lv; });
+            });
             JPAudio.listen(4000, function(t) { out.textContent = 'Heard: "' + t + '"'; }).then(function(r) {
                 let msg;
                 if (r.error == 'not-allowed' || r.error == 'service-not-allowed') msg = 'Microphone permission was denied. Click the lock icon in the address bar to allow the microphone for j-archive.com.';
@@ -1113,7 +1173,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     if (!lv) return;
                     let pct = Math.round(lv.peak * 100);
                     let verdict = pct < 15 ? ' — quiet: raise Input volume in System Settings → Sound → Input, or move closer to the mic' : pct < 35 ? ' — a little low; more Input volume in System Settings → Sound would help' : ' — good';
-                    out.textContent = msg + '  ·  Input: ' + (lv.label || 'default microphone') + ', peak level ' + pct + '%' + verdict + '.';
+                    out.textContent = msg + '  ·  Input: ' + (lv.label || 'default microphone') + (lv.why && !/default/.test(lv.why) ? ' (' + lv.why + ')' : '') + ', peak level ' + pct + '%' + verdict + '.';
                 });
             });
         };
@@ -1432,7 +1492,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         closePauseMenu();
         runToken++;
         let tok = runToken;
-        handlers = { buzz: null, override: null, cont: null, pick: null, submit: null };
+        handlers = { buzz: null, override: null, cont: null, pick: null, submit: null, inputBuzz: null };
         JPAudio.stopSpeaking();
         JPAudio.stopLoop();
         if (typeof JPNeural !== 'undefined') JPNeural.clearPrefetch();
@@ -1730,7 +1790,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 done = true;
                 handlers.pick = null;
                 JPClock.off(onPausePick);
-                if (current) current.stop();
+                if (current) { try { if (current.abort) current.abort(); else current.stop(); } catch (e) { } }   // the mic is released before the host speaks
                 resolve(n);
             }
             handlers.pick = function(n) { finish(n); };
@@ -1746,7 +1806,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                         if (heard) heard.textContent = text ? '“' + text + '”' : '';
                         let n = parsePick(text, G.round);
                         if (n != null) { let cell = boardCell(n); if (cell) cell.classList.add('jp-picking'); finish(n); }
-                    }, { endOnFinal: false });
+                    }, { endOnFinal: false, linger: 400 });     // the next 20 s session follows at once: keep the mic across the gap
                     pickListener = current;
                     let r = await current;
                     if (done) break;
@@ -1961,14 +2021,15 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
         let got = await new Promise(function(resolve) {
             let done = false, listener = null, interim = '', phrases = [ ];   // phrases: the finished phrase heard, with its alternatives
+            let stems = [ ];                                                  // "what is…", "um": heard, but no response yet
             let deadline = JPClock.now() + seconds * 1000;
-            function finish(typed) {
+            function finish(typed, abort) {
                 if (done) return;
                 done = true;
                 JPClock.clearTimeout(t);
                 JPClock.off(onPauseAnswer); JPClock.off(onResumeAnswer);
                 handlers.submit = null;
-                if (listener) { try { listener.stop(); } catch (e) { } }
+                if (listener) { try { if (abort && listener.abort) listener.abort(); else listener.stop(); } catch (e) { } }
                 resolve({ typed: (typed || '').trim(), phrases: phrases, interim: interim });
             }
             let timeUp = false;
@@ -1979,25 +2040,33 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (listener && useSpeech) { try { listener.stop(); } catch (e) { } setTimeout(function() { finish(U.input.value); }, 4000); }
                 else finish(U.input.value);
             }, seconds * 1000);
-            handlers.submit = function(text) { finish(text); };
+            handlers.submit = function(text) { finish(text, true); };   // typed: the mic is released at once
 
-            function onHeard(text, gotFinal, segments) {
-                interim = text;
-                U.heard.textContent = text ? '“' + text + '”' : '';
-                if (!gotFinal || !segments || !segments.length) return;
-                phrases = segments.slice();
-                finish(U.input.value);
+            // One finished phrase, with its alternatives. "What is…" on its own
+            // isn't a response (you're still thinking): it's kept as a prefix and
+            // the mic stays on. The first phrase with something in it is judged.
+            function heardSegment(seg) {
+                if (!seg || !seg.length || JPJudge.contentFree(seg[0])) { if (seg && seg[0]) stems.push(seg[0]); return false; }
+                let stem = stems.join(' ').trim();
+                phrases = [ stem ? seg.map(function(a) { return stem + ' ' + a; }).concat(seg) : seg.slice() ];
+                return true;
             }
             function attach(l) {
                 listener = l;
-                l.onInterim = onHeard;
+                let seen = 0, before = stems.join(' ').trim();                // segments are per recognizer session
+                l.onInterim = function(text, gotFinal, segments) {
+                    interim = (before + ' ' + text).trim();
+                    U.heard.textContent = interim ? '“' + interim + '”' : '';
+                    if (!gotFinal || !segments) return;
+                    for (let seg of segments.slice(seen)) { seen++; if (heardSegment(seg)) { finish(U.input.value, true); return; } }
+                };
                 l.then(function(r) {
                     if (listener !== l || done) return;         // superseded after a pause, or finished
-                    if (r.segments && r.segments.length && !phrases.length) { phrases = r.segments.slice(); finish(U.input.value); return; }
+                    for (let seg of (r.segments || [ ]).slice(seen)) { seen++; if (heardSegment(seg)) { finish(U.input.value, true); return; } }
                     if (timeUp) { finish(U.input.value); return; }
                     if (JPClock.paused) return;
                     if (r.error && r.error != 'no-speech' && r.error != 'aborted') { U.mic.className = 'jp-mic'; U.mic.textContent = 'Mic: ' + r.error + ' — type it'; return; }
-                    // The recognizer ended on silence with nothing heard; keep listening while there is time.
+                    // The recognizer ended on silence with no response yet; keep listening while there is time.
                     let remaining = deadline - JPClock.now();
                     if (remaining > 600) startListening(remaining); else finish(U.input.value);
                 });
@@ -2287,60 +2356,98 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await say(line, tok);
     }
 
-    // Final Jeopardy! answer: the window stays open for the full time (Enter
-    // locks it in early). Chrome ends speech recognition on its own after a
-    // silence, so listening is restarted until the clock runs out.
+    // Final Jeopardy! answer. The music plays for the full time, but the
+    // microphone isn't left open through it (people think out loud): you ring
+    // in when you're ready to respond, say it, and the first real phrase is
+    // locked in. Typing works throughout; Enter locks it in.
     async function finalAnswer(fj, seconds, tok) {
         let useSpeech = S.answerMode == 'speech' && JPAudio.recognitionSupported();
-        showAnswerStrip(true, useSpeech);
+        showAnswerStrip(true, false);
         setTimer(seconds, 'green');
-        setHint(useSpeech ? 'Say (or type) your response. <span class="jp-key">Enter</span> locks it in early.' : 'Type your response. <span class="jp-key">Enter</span> locks it in early.');
+        let key = '<span class="jp-key">' + buzzKeyName() + '</span>';
+        setHint(useSpeech ? 'Think it over. When you\'re ready to respond, press ' + key + ' (or click) and say it — or type it and press <span class="jp-key">Enter</span>.'
+                          : 'Type your response. <span class="jp-key">Enter</span> locks it in early.');
 
-        let deadline = JPClock.now() + seconds * 1000;
-        let typed = '', stopped = false, current = null;
-        let heardParts = [ ], alternatives = [ ];
+        let got = await new Promise(function(resolve) {
+            let done = false, listener = null, interim = '', phrases = [ ], stems = [ ], buzzed = false, timeUp = false;
+            let deadline = JPClock.now() + seconds * 1000;
+            function finish(typed, abort) {
+                if (done) return;
+                done = true;
+                JPClock.clearTimeout(t);
+                JPClock.off(onPauseFJ); JPClock.off(onResumeFJ);
+                handlers.submit = null; handlers.buzz = null; handlers.inputBuzz = null;
+                if (listener) { try { if (abort && listener.abort) listener.abort(); else listener.stop(); } catch (e) { } }
+                resolve({ typed: (typed || '').trim(), phrases: phrases, interim: interim });
+            }
+            let t = JPClock.setTimeout(function() {
+                timeUp = true;
+                if (listener && useSpeech) { try { listener.stop(); } catch (e) { } setTimeout(function() { finish(U.input.value); }, 4000); }
+                else finish(U.input.value);
+            }, seconds * 1000);
+            handlers.submit = function(text) { finish(text, true); };
 
-        let lockIn = new Promise(function(resolve) {
-            let t = JPClock.setTimeout(function() { stopped = true; if (current) current.stop(); handlers.submit = null; resolve(); }, seconds * 1000);
-            handlers.submit = function(text) { typed = text || ''; stopped = true; JPClock.clearTimeout(t); if (current) current.stop(); handlers.submit = null; resolve(); };
+            function heardSegment(seg) {
+                if (!seg || !seg.length || JPJudge.contentFree(seg[0])) { if (seg && seg[0]) stems.push(seg[0]); return false; }
+                let stem = stems.join(' ').trim();
+                phrases = [ stem ? seg.map(function(a) { return stem + ' ' + a; }).concat(seg) : seg.slice() ];
+                return true;
+            }
+            function attach(l) {
+                listener = l;
+                let seen = 0, before = stems.join(' ').trim();
+                l.onInterim = function(text, gotFinal, segments) {
+                    interim = (before + ' ' + text).trim();
+                    U.heard.textContent = interim ? '“' + interim + '”' : '';
+                    if (!gotFinal || !segments) return;
+                    for (let seg of segments.slice(seen)) { seen++; if (heardSegment(seg)) { finish(U.input.value, true); return; } }
+                };
+                l.then(function(r) {
+                    if (listener !== l || done) return;
+                    for (let seg of (r.segments || [ ]).slice(seen)) { seen++; if (heardSegment(seg)) { finish(U.input.value, true); return; } }
+                    if (timeUp) { finish(U.input.value); return; }
+                    if (JPClock.paused) return;
+                    if (r.error && r.error != 'no-speech' && r.error != 'aborted') { U.mic.className = 'jp-mic'; U.mic.textContent = 'Mic: ' + r.error + ' — type it'; return; }
+                    let remaining = deadline - JPClock.now();
+                    if (remaining > 600) startListening(remaining); else finish(U.input.value);
+                });
+            }
+            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: true })); }
+            // Ringing in opens the mic; the music ducks underneath.
+            function ringIn() {
+                if (buzzed || done || !useSpeech) return;
+                buzzed = true;
+                handlers.buzz = null; handlers.inputBuzz = null;
+                JPAudio.play('buzz');
+                JPAudio.duckLoop(true);
+                lightPodium(YOU);
+                U.mic.className = 'jp-mic jp-listening'; U.mic.textContent = 'Listening…';
+                setHint('Say your response (or type it and press <span class="jp-key">Enter</span>).');
+                let remaining = deadline - JPClock.now();
+                if (remaining > 300) startListening(remaining); else finish(U.input.value);
+            }
+            if (useSpeech) { handlers.buzz = ringIn; handlers.inputBuzz = ringIn; }
+            function onPauseFJ() { if (listener) { let l = listener; listener = null; l.stop(); } }
+            function onResumeFJ() {
+                if (done || !buzzed) return;
+                let remaining = deadline - JPClock.now();
+                if (remaining > 300) startListening(remaining);
+            }
+            JPClock.onPause(onPauseFJ);
+            JPClock.onResume(onResumeFJ);
         });
-
-        // A pause stops the recognizer; the loop below starts a new one on resume.
-        let onPauseFJ = function() { if (current) current.stop(); };
-        JPClock.onPause(onPauseFJ);
-
-        let listening = Promise.resolve();
-        if (useSpeech) {
-            listening = (async function() {
-                while (!stopped && JPClock.now() < deadline - 700) {
-                    await JPClock.whenRunning();
-                    if (stopped) break;
-                    current = JPAudio.listen(deadline - JPClock.now(), function(text) {
-                        U.heard.textContent = '“' + (heardParts.join(' ') + ' ' + text).trim() + '”';
-                    }, { endOnFinal: false });
-                    let r = await current;
-                    if (r.text) heardParts.push(r.text);
-                    if (r.alternatives && r.alternatives.length) alternatives = r.alternatives;
-                    if (r.error == 'not-allowed' || r.error == 'service-not-allowed' || r.error == 'audio-capture') {
-                        U.mic.className = 'jp-mic'; U.mic.textContent = 'Mic: ' + r.error + ' — type it';
-                        break;
-                    }
-                }
-            })();
-        }
-        await lockIn;
-        await listening;
-        JPClock.off(onPauseFJ);
-        typed = (typed || U.input.value || '').trim();
+        if (!alive(tok)) return { said: '', correct: false };
+        JPAudio.duckLoop(false);
         showAnswerStrip(false);
 
-        let heardText = heardParts.join(' ').trim();
+        // Judge: the typed text, then the phrase heard (with its alternatives).
         let candidates = [ ];
-        if (typed) candidates.push(typed);
-        if (heardText) candidates.push(heardText);
-        for (let a of alternatives) candidates.push(a);
+        if (got.typed) candidates.push(got.typed);
+        for (let i = got.phrases.length - 1; i >= 0; i--) for (let a of got.phrases[i]) candidates.push(a);
+        if (!got.phrases.length && got.interim) candidates.push(got.interim);
+        let heardLast = got.phrases.length ? got.phrases[got.phrases.length - 1][0] : got.interim;
         let verdict = JPJudge.judgeAny(candidates, fj.correct);
-        let said = typed || heardText || '';
+        let said = got.typed || (verdict.correct && verdict.text ? verdict.text : heardLast) || '';
         G.stats.answered++;
         if (verdict.correct) G.stats.correct++; else G.stats.wrong++;
         podiumLine(YOU, 'response locked in');

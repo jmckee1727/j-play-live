@@ -3,6 +3,8 @@
 **Name:** J-Play Live: play along on J! Archive
 **Category:** Fun
 **Language:** English
+**Homepage / support URL:** https://github.com/jmckee1727/j-play-live (issues: https://github.com/jmckee1727/j-play-live/issues)
+**Privacy policy URL:** https://jmckee1727.github.io/j-play-live/store/privacy-policy.html
 
 ## Summary (132 characters max)
 

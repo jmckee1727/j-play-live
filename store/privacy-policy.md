@@ -25,4 +25,4 @@ The extension does not contact any server of its own. There is no analytics, adv
 
 ## Contact
 
-Questions about this policy: use the developer contact on the extension's Chrome Web Store listing, or the project's GitHub issues page.
+Questions about this policy: use the developer contact on the extension's Chrome Web Store listing, or open an issue at [https://github.com/jmckee1727/j-play-live/issues](https://github.com/jmckee1727/j-play-live/issues).

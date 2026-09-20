@@ -17,11 +17,10 @@
 1. **Developer account.** Sign in at https://chrome.google.com/webstore/devconsole and pay the
    one-time $5 registration fee. Verify the contact email. (This is the only step that costs
    anything.)
-2. **Host the privacy policy at a public URL.** The store requires one. The easiest route, and
-   the one that also gives you a support link: create a GitHub repository for this folder (it's
-   ready to be one; nothing in it is private), turn on GitHub Pages for it, and the policy is
-   served at `https://<you>.github.io/j-play-live/store/privacy-policy.html`. A Gist or any
-   web host works too.
+2. **Privacy policy URL — done.** The repository is https://github.com/jmckee1727/j-play-live with
+   GitHub Pages on, so the policy is served at
+   https://jmckee1727.github.io/j-play-live/store/privacy-policy.html and the support link is
+   https://github.com/jmckee1727/j-play-live/issues.
 3. **Upload.** Developer Dashboard → **New item** → upload the zip from `dist/`.
 4. **Store listing:** paste the summary and description from `store/listing.md`, upload the
    five screenshots from `store/screenshots/`, category "Fun", language English.

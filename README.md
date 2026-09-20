@@ -114,4 +114,5 @@ fetch to that API plus playback of the returned audio; nothing else needs to cha
 MIT (see `LICENSE`), building on Wayne Davison's MIT-licensed j-play. Not affiliated with Jeopardy
 Productions, Sony Pictures Television, or the J! Archive; *Jeopardy!* is a trademark of Jeopardy
 Productions, Inc. The extension ships none of the show's music, artwork, or logos. Privacy policy:
-`store/privacy-policy.md`.
+`store/privacy-policy.md` (published at https://jmckee1727.github.io/j-play-live/store/privacy-policy.html).
+Source and issues: https://github.com/jmckee1727/j-play-live.

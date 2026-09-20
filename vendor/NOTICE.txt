@@ -1,0 +1,20 @@
+Third-party components bundled in this extension
+
+kokoro.web.js
+  kokoro-js (https://github.com/hexgrad/kokoro) — Apache License 2.0 — see LICENSE-kokoro-js.txt
+  Bundles @huggingface/transformers (Apache License 2.0 — see LICENSE-transformers.txt)
+  and phonemizer (Apache License 2.0 — see LICENSE-phonemizer.txt), which embeds
+  espeak-ng (GPL-3.0; https://github.com/espeak-ng/espeak-ng).
+
+ort-wasm-simd-threaded.jsep.mjs, ort-wasm-simd-threaded.jsep.wasm
+  ONNX Runtime Web (https://github.com/microsoft/onnxruntime) — MIT License — see LICENSE-onnxruntime.txt
+
+The Kokoro-82M speech model (Apache License 2.0, https://huggingface.co/hexgrad/Kokoro-82M;
+ONNX export at https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) is not bundled.
+It is downloaded from Hugging Face on first use, at the user's request, and cached locally
+in the browser. Its voices are synthetic; none is a clone of a real person.
+
+
+names.js (in the extension root) is derived from U.S. Social Security Administration
+birth-name records (public domain) as compiled by the Global Name Data project,
+https://github.com/OpenGenderTracking/globalnamedata, data licensed CC BY 3.0.

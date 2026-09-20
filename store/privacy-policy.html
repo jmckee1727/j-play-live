@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — J-Play Live</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.55;color:#222;background:#fff}h1{font-size:1.8em}h2{font-size:1.2em;margin-top:1.6em}a{color:#0645ad}</style>
+</head><body>
+<h1>Privacy Policy — J-Play Live</h1>
+<p><em>Last updated: September 19, 2026</em></p>
+<p>J-Play Live is a browser extension that lets you play along with archived game shows on the J! Archive website (j-archive.com). It runs only on j-archive.com game pages.</p>
+<h2>What the extension collects</h2>
+<p>Nothing. The extension does not collect, store, or transmit any personal information, browsing history, or gameplay data. Your settings (difficulty, voice choice, and similar) are saved in your browser's local storage for j-archive.com and never leave your computer.</p>
+<h2>Network activity</h2>
+<p>The extension makes network requests in exactly two situations:</p>
+<ol>
+<li><strong>The studio voice.</strong> If you choose to download the studio voice, the extension downloads the open-source Kokoro speech model files from Hugging Face (huggingface.co and its content-delivery hosts) once and caches them in your browser. These requests are plain file downloads that carry no information about you. After the download, speech is generated entirely on your computer.</li>
+<li><strong>Speech recognition.</strong> If you choose to answer by voice, the extension uses the speech recognition built into Chrome. Chrome sends microphone audio to Google's speech service to transcribe it while the game is listening: after you ring in, for a few seconds at a time, and — if you keep "pick clues by voice" on — while you are choosing a clue. This is governed by Google's privacy policy, not by this extension. You can answer by typing instead, in which case no audio is captured.</li>
+</ol>
+<p>The extension does not contact any server of its own. There is no analytics, advertising, or telemetry.</p>
+<h2>Permissions</h2>
+<ul>
+<li><strong>Access to j-archive.com game pages:</strong> to add the game to those pages.</li>
+<li><strong>Offscreen documents:</strong> to run the speech model in a hidden extension page.</li>
+<li><strong>huggingface.co / hf.co:</strong> to download the speech model at your request.</li>
+</ul>
+<h2>Contact</h2>
+<p>Questions about this policy: use the developer contact on the extension's Chrome Web Store listing, or the project's GitHub issues page.</p>
+</body></html>

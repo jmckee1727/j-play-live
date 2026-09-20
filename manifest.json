@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "J-Play Live: play along on J! Archive",
+  "short_name": "J-Play Live",
+  "version": "0.7.5",
+  "description": "Play archived Jeopardy! games live on J! Archive: clues read aloud, ring in, answer by voice, race the original contestants.",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "all_frames": false,
+      "matches": [
+        "https://*.j-archive.com/showgame*"
+      ],
+      "run_at": "document_end",
+      "css": [
+        "stylecontent.css",
+        "live.css"
+      ],
+      "js": [
+        "archive.js",
+        "clock.js",
+        "audio.js",
+        "judge.js",
+        "wagers.js",
+        "interpret.js",
+        "reader.js",
+        "names.js",
+        "neural.js",
+        "live.js"
+      ]
+    }
+  ],
+  "permissions": [
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://*.j-archive.com/showgame*",
+    "https://huggingface.co/*",
+    "https://*.hf.co/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sounds/*"
+      ],
+      "matches": [
+        "https://*.j-archive.com/*"
+      ]
+    }
+  ],
+  "cross_origin_embedder_policy": {
+    "value": "require-corp"
+  },
+  "cross_origin_opener_policy": {
+    "value": "same-origin"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

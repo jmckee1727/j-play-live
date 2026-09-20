@@ -16,6 +16,7 @@
 // anywhere: the requests are plain file downloads.
 
 import { KokoroTTS, env } from '../vendor/kokoro.web.js';
+import { earCaps, earLoad, earUnload, earTranscribe, earSelfTest } from './ear.js';
 
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 const HF_BASE = 'https://huggingface.co/' + MODEL_ID + '/resolve/main/';
@@ -190,6 +191,12 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
       case 'generate': p = generate(msg); break;
       case 'voices': p = Promise.resolve({ ok: true, voices: VOICES }); break;
       case 'ping': p = Promise.resolve({ ok: true, loaded: !!tts }); break;
+      // the studio ear (offscreen/ear.js)
+      case 'ear-caps': p = earCaps(); break;
+      case 'ear-load': p = earLoad(msg, msg.tabId); break;
+      case 'ear-unload': p = earUnload(); break;
+      case 'ear-transcribe': p = earTranscribe(msg); break;
+      case 'ear-selftest': p = earSelfTest(msg, tts ? function(text) { return tts.generate(text, { voice: 'am_michael', speed: 1 }); } : null); break;
       default: p = Promise.resolve({ ok: false, error: 'unknown op ' + msg.op });
     }
     p.then(sendResponse, function(e) { sendResponse({ ok: false, error: (e && e.message) ? e.message : String(e) }); });

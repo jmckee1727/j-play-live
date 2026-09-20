@@ -35,6 +35,24 @@ Pieces: `offscreen/tts.js` runs the model in a hidden extension page; `backgroun
 messages; `neural.js` (`JPNeural`) is the game page's client with the prefetch queue and
 playback; `vendor/` holds the engine (see `vendor/NOTICE.txt` for licenses).
 
+## The studio ear
+
+Speech recognition can run on your computer too: OpenAI's Whisper (the English-only "base" model,
+about 210 MB for the GPU build or 80 MB for the CPU build; a "small" model is offered for better
+results on names), executed by ONNX Runtime in the same hidden extension page as the voice. It is
+the same every time, doesn't depend on Google's speech service, and nothing you say leaves the
+machine. Under **Recognition** in Settings, click **Download the studio ear**; it loads with each
+game. The game opens the microphone once, listens for an utterance (a simple energy detector finds
+where you start and stop), and judges each finished phrase as it arrives — a miss keeps the mic open
+for a repeat while the clock runs. Chrome's built-in recognizer remains available as the other
+option and is used automatically until the studio ear is downloaded. **Mic log** in the same
+section shows what the recognizer did on recent clues, which is the first thing to look at if
+answers aren't being heard.
+
+Pieces: `offscreen/ear.js` runs Whisper (through `vendor/transformers.min.js`); `ear.js` (`JPEar`)
+captures the microphone on the game page and cuts it into utterances; `JPAudio.listen` routes to it
+when it is loaded.
+
 ## First run
 
 * On the setup screen click **Test microphone** once. Besides what it heard, it reports which input
@@ -60,6 +78,7 @@ playback; `vendor/` holds the engine (see `vendor/NOTICE.txt` for licenses).
 | `y` / `n` | Overrule the judge on your last response (until the next clue). The money, the rebound and control of the board all follow. |
 | **Rewind** (pause menu) | Every clue played so far, in order. Go back to the moment before any of them: that clue and everything after it are played again with the board, the money and control as they were; your responses from that point are cleared. |
 | **Edit results** (pause menu) | Every response of yours, each with Right / No response / Wrong. Change one and the money follows: yours, and that of anyone who rang in after you on that clue (mark yourself right and the rebound never happened; mark yourself wrong and it plays out as broadcast). The ring-in order and control of the board stay as they happened. |
+| a click, the buzz key or `Enter` during any line of dialogue | Skips the rest of that line (the clue reading itself excepted — a click then is a buzz). |
 | `Esc` or the Pause button | Freeze everything: the buzzer race, the answer clock, the host's voice, the timer bar. Opening Settings pauses too. |
 | click a clue, or say it | Pick it, when you have control of the board: "Science for 600", "Shakespeare, 400", "same category for 800" (voice picking is on when you answer by voice) |
 
@@ -86,14 +105,21 @@ are the archived ones. The category is shown across the top of every clue.
 | `reader.js` | `JPReader`: makes archive text speakable — abbreviations ("cont. U.S.", "pres."), Roman numerals ("Henry VIII"), decades ("the '60s"), dashes, ALL-CAPS categories, bracketed asides. |
 | `wagers.js` | `JPWagers`: how the contestants wager. Final Jeopardy! uses the standard game theory (leader shores up or keeps a lock, second place beats the leader by $1 / covers / goes all in, everyone else all in); Daily Doubles use a sensible heuristic. The reasoning is shown at the reveal. |
 | `names.js` | `JPNames`: first names by gender (from public-domain U.S. birth records), used to give each contestant a fitting voice. |
+| `ear.js` | `JPEar`: the studio ear's client — microphone capture, utterance detection, and the same `listen()` shape as Chrome's recognizer. |
 | `neural.js` | `JPNeural`: client for the studio voice — capability check, download, prefetch queue, WebAudio playback. |
-| `background.js`, `offscreen/` | Service worker and the hidden page that runs the speech model. |
-| `vendor/` | The bundled speech engine (kokoro-js, ONNX Runtime Web) and licenses. |
+| `background.js`, `offscreen/` | Service worker and the hidden page that runs the speech models (`tts.js` the voice, `ear.js` the ear). |
+| `vendor/` | The bundled engines (kokoro-js, transformers.js, ONNX Runtime Web) and licenses. |
 | `store/`, `PUBLISHING.md`, `build.sh` | Chrome Web Store listing text, privacy policy, publishing steps and the packaging script. |
 | `live.js` | The live game: setup screen, board, buzzer race, answering, Daily Doubles, Final Jeopardy!, scoring. |
 | `live.css` | Styling for the live overlay. |
 | `stylecontent.css` | Original j-play styling for the review mode. |
 | `sounds/` | Optional sound files (see below). |
+
+## High scores
+
+Every finished game is recorded in this browser (your score, place, accuracy, the game) and listed
+under **High scores** on the setup screen and the final screen. It is local to this computer for
+now; sign-in and online play are on the list.
 
 ## Sounds
 

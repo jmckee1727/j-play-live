@@ -208,7 +208,7 @@ var JPNeural = (function() {
     return {
         available: available, ensure: ensure, caps: caps, voices: voices, load: load, unload: unload,
         synth: synth, prefetch: prefetch, clearPrefetch: clearPrefetch,
-        speak: speak, stop: stop, isPlaying: isPlaying, onStatus: onStatus,
+        speak: speak, stop: stop, isPlaying: isPlaying, onStatus: onStatus, rpc: rpc,
         get state() { return state; },
         get ready() { return state.loaded; },
         cacheSize: function() { return cache.size; },

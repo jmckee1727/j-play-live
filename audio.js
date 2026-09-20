@@ -443,8 +443,12 @@ var JPAudio = (function() {
     // ------------------------------------------------------ speech recognition
 
     function recognitionSupported() {
+        if (typeof JPEar !== 'undefined' && JPEar.active()) return true;
         return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     }
+    // What the recognizer did, session by session (the last 16), for the mic log in Settings.
+    let micLog = [ ];
+    function micLogAdd(entry) { micLog.push(entry); if (micLog.length > 16) micLog.shift(); }
 
     // Listen for up to `ms` milliseconds. Calls onInterim(text) as words arrive.
     // Resolves { text, alternatives, final, error } -- text may be '' if nothing heard.
@@ -481,17 +485,28 @@ var JPAudio = (function() {
 
     function listen(ms, onInterim, opts) {
         opts = opts || { };
+        // The studio ear (on-device Whisper) takes over when it is loaded and chosen.
+        if (typeof JPEar !== 'undefined' && JPEar.active()) return JPEar.listen(ms, onInterim, opts);
         let SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         let stopFn = function() { };
         let handle = { onInterim: null, done: false };
+        let entry = { engine: 'chrome', at: new Date().toLocaleTimeString(), ms: ms, events: [ ], result: '' };
+        let t0 = performance.now();
+        function logEv(name) { entry.events.push(Math.round(performance.now() - t0) + 'ms ' + name); }
+        micLogAdd(entry);
         let p = new Promise(function(resolve) {
             if (!SR) { resolve({ text: '', alternatives: [ ], final: false, error: 'unsupported' }); return; }
             let rec;
-            try { rec = new SR(); } catch (e) { resolve({ text: '', alternatives: [ ], final: false, error: 'init' }); return; }
+            try { rec = new SR(); } catch (e) { logEv('init failed'); resolve({ text: '', alternatives: [ ], final: false, error: 'init' }); return; }
             rec.lang = 'en-US';
             rec.interimResults = true;
             rec.continuous = !opts.endOnFinal;
             rec.maxAlternatives = 5;
+            rec.onstart = function() { logEv('start'); };
+            rec.onaudiostart = function() { logEv('audio'); };
+            rec.onspeechstart = function() { logEv('speech'); };
+            rec.onspeechend = function() { logEv('speech end'); };
+            rec.onnomatch = function() { logEv('no match'); };
 
             let best = '', alts = [ ], done = false, gotFinal = false, err = null, lastSegments = [ ];
             let finish = function() {
@@ -500,6 +515,8 @@ var JPAudio = (function() {
                 handle.done = true;
                 clearTimeout(timer);
                 try { rec.onresult = null; rec.onend = null; rec.onerror = null; rec.abort(); } catch (e) { }
+                logEv('end' + (err ? ' (' + err + ')' : '') + (best.trim() ? ' "' + best.trim().slice(0, 60) + '"' : ' — nothing'));
+                entry.result = best.trim(); entry.error = err;
                 resolve({ text: best.trim(), alternatives: alts, final: gotFinal, error: err, segments: lastSegments });
             };
             let timer = setTimeout(function() {
@@ -529,9 +546,10 @@ var JPAudio = (function() {
                 // recognizer started early can be handed to whoever needs it next.
                 let cb = handle.onInterim || onInterim;
                 if (cb) cb(best.trim(), gotFinal, segments, text.trim());
+                if (finalCount) logEv('result #' + finalCount + ' "' + text.trim().slice(0, 40) + '"');
                 if (gotFinal && opts.endOnFinal) finish();
             };
-            rec.onerror = function(ev) { err = ev.error; if (ev.error == 'not-allowed' || ev.error == 'service-not-allowed' || ev.error == 'audio-capture') finish(); };
+            rec.onerror = function(e) { err = e.error; logEv('error ' + e.error); if (e.error == 'not-allowed' || e.error == 'service-not-allowed' || e.error == 'audio-capture') finish(); };
             rec.onend = function() { if (!done) { /* Chrome ended it early (silence); keep what we have. */ finish(); } };
             stopFn = function() { try { rec.stop(); } catch (e) { } setTimeout(finish, 300); };
             try { rec.start(); } catch (e) { err = 'start'; finish(); }
@@ -559,7 +577,7 @@ var JPAudio = (function() {
         startLoop: startLoop,
         stopLoop: stopLoop,
         recognitionSupported: recognitionSupported,
-        listen: listen, sampleInputLevel: sampleInputLevel,
+        listen: listen, sampleInputLevel: sampleInputLevel, get micLog() { return micLog; },
         SFX_FILES: SFX_FILES,
     };
 })();

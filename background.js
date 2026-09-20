@@ -72,7 +72,7 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
         return true;
     }
 
-    if (msg.type == 'tts-event') {
+    if (msg.type == 'tts-event' || msg.type == 'ear-event') {
         // From the offscreen document: relay to the tab that asked.
         if (msg.tabId != null && chrome.tabs) {
             chrome.tabs.sendMessage(msg.tabId, msg).catch(function() { });

@@ -1,6 +1,6 @@
 # Privacy Policy — J-Play Live
 
-*Last updated: September 19, 2026*
+*Last updated: September 20, 2026*
 
 J-Play Live is a browser extension that lets you play along with archived game shows on the J! Archive website (j-archive.com). It runs only on j-archive.com game pages.
 
@@ -13,7 +13,7 @@ Nothing. The extension does not collect, store, or transmit any personal informa
 The extension makes network requests in exactly two situations:
 
 1. **The studio voice.** If you choose to download the studio voice, the extension downloads the open-source Kokoro speech model files from Hugging Face (huggingface.co and its content-delivery hosts) once and caches them in your browser. These requests are plain file downloads that carry no information about you. After the download, speech is generated entirely on your computer.
-2. **Speech recognition.** If you choose to answer by voice, the extension uses the speech recognition built into Chrome. Chrome sends microphone audio to Google's speech service to transcribe it while the game is listening: after you ring in, for a few seconds at a time, and — if you keep "pick clues by voice" on — while you are choosing a clue. This is governed by Google's privacy policy, not by this extension. You can answer by typing instead, in which case no audio is captured.
+2. **Speech recognition.** If you choose to answer by voice, the game listens through your microphone after you ring in (and, if you keep "pick clues by voice" on, while you are choosing a clue). Two recognizers are offered. The **studio ear** downloads the open-source Whisper speech model from Hugging Face once (a plain file download, like the voice) and then transcribes your speech entirely on your computer; no audio leaves the machine. Until it is downloaded, or if you choose it instead, the extension uses **Chrome's built-in recognizer**, which sends microphone audio to Google's speech service while the game is listening; that is governed by Google's privacy policy, not by this extension. You can answer by typing instead, in which case no audio is captured.
 
 The extension does not contact any server of its own. There is no analytics, advertising, or telemetry.
 

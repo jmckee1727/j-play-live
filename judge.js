@@ -145,7 +145,29 @@ var JPJudge = (function() {
             if (u.length >= 6 && v.length >= 10 && wholeWordContains(v, u) && u.length / v.length >= 0.5)
                 return { correct: true, reason: 'partial', normalized: u, matched: v };
         }
+        for (let v of vs) {
+            // Sounds the same: a spoken response that a recognizer wrote down with a
+            // different spelling ("series" for Ceres, "holding car field" for Holden
+            // Caulfield). Spellings that sound alike are folded together, then compared.
+            let a = soundFold(u), b = soundFold(v);
+            if (a.length >= 4 && b.length >= 4) {
+                let sim = similarity(a, b);
+                if (a == b || (b.length >= 5 && sim >= 0.8) || (b.length >= 10 && sim >= 0.75))
+                    return { correct: true, reason: 'sounds like ' + sim.toFixed(2), normalized: u, matched: v };
+            }
+        }
         return { correct: false, reason: 'no match', normalized: u, variants: vs };
+    }
+
+    // Sound folding: spellings that sound alike become one spelling, the words
+    // run together, so a recognizer's homophone lands close to the real answer.
+    function soundFold(text) {
+        let t = ' ' + String(text).toLowerCase().replace(/[^a-z ]/g, '') + ' ';
+        t = t.replace(/ph/g, 'f').replace(/ght/g, 't').replace(/gh /g, ' ').replace(/ck/g, 'k').replace(/sch/g, 'sk').replace(/tch/g, 'ch').replace(/sh/g, 'x').replace(/ch/g, 'x').replace(/th/g, 't')
+             .replace(/c(?=[eiy])/g, 's').replace(/c/g, 'k').replace(/q/g, 'k').replace(/z/g, 's').replace(/dg/g, 'j').replace(/ wr/g, ' r').replace(/ kn/g, ' n').replace(/ gn/g, ' n').replace(/ ps/g, ' s').replace(/wh/g, 'w').replace(/mb /g, 'm ')
+             .replace(/y/g, 'i').replace(/ea/g, 'e').replace(/ee/g, 'e').replace(/ie/g, 'e').replace(/oo/g, 'u').replace(/ou/g, 'u').replace(/au/g, 'o').replace(/aw/g, 'o').replace(/ai/g, 'a').replace(/ei/g, 'a').replace(/ey /g, 'e ').replace(/e (?=.)/g, ' ');
+        t = t.replace(/(.)\1+/g, '$1').replace(/\s+/g, '');
+        return t;
     }
 
     // Judge several candidate transcriptions (speech recognition alternatives).

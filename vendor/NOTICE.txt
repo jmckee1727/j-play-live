@@ -18,3 +18,7 @@ in the browser. Its voices are synthetic; none is a clone of a real person.
 names.js (in the extension root) is derived from U.S. Social Security Administration
 birth-name records (public domain) as compiled by the Global Name Data project,
 https://github.com/OpenGenderTracking/globalnamedata, data licensed CC BY 3.0.
+
+transformers.min.js is @huggingface/transformers 3.8.1 (Apache License 2.0, LICENSE-transformers-js.txt),
+used to run the Whisper speech-recognition model (openai/whisper, MIT; ONNX conversion by onnx-community)
+for the studio ear. Model files are downloaded by the user at runtime and cached by the browser.

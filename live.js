@@ -874,7 +874,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await JPEar.load(S.earSize || 'base', earPreferredDevice());
             S.earEngine = 'studio'; saveSettings(); JPEar.enabled = true;
             let r = panel.querySelector('input[name="jp-ear"][value="studio"]'); if (r) r.checked = true;
-            JPEar.openMic();
         } catch (e) { }
         try { earCaps = await JPEar.caps(); } catch (e) { }
         refreshEarUI(panel);
@@ -892,7 +891,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 let dev = earPreferredDevice();
                 if (has && !earCaps.cached[sz].webgpu && dev == 'webgpu') dev = 'wasm';
                 await JPEar.load(sz, dev);
-                if (S.answerMode == 'speech') JPEar.openMic();
             }
         } catch (e) { }
         if (U && U.stage) refreshEarUI(U.stage);
@@ -903,7 +901,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         for (let e of chrome.slice(-8)) lines.push('[Chrome ' + e.at + '] ' + e.events.join(' → '));
         let ear = (typeof JPEar !== 'undefined' && JPEar.log) || [ ];
         for (let e of ear.slice(-24)) lines.push('[ear +' + e.t + 'ms] ' + e.m);
-        if (typeof JPEar !== 'undefined') lines.push('[mic] ' + (JPEar.micLabel() || 'not open') + ' · level ' + JPEar.level.toFixed(3) + ' · room floor ' + JPEar.noise.toFixed(3));
+        if (typeof JPEar !== 'undefined') lines.push('[mic] ' + (JPEar.micState ? JPEar.micState() : (JPEar.micLabel() || 'not open')) + ' · level ' + JPEar.level.toFixed(3) + ' · room floor ' + JPEar.noise.toFixed(3));
         return lines.length ? lines.join('\n') : 'Nothing yet — play a clue and answer, then look again.';
     }
 
@@ -1377,7 +1375,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             for (let i = 0; i < 900 && ((neuralAvailableHere() && JPNeural.state.loading) || earLoading()) && !skip; i++) { await sleep(100, tok); if (!alive(tok)) return; }
             handlers.cont = null;
         }
-        if (earAvailableHere() && JPEar.active() && S.answerMode == 'speech') JPEar.openMic();
         G.scores = { };
         for (let n of realNames()) G.scores[n] = 0;
         G.scores[YOU] = 0;
@@ -1800,11 +1797,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await hostSay(info.queryText, 'clue');
         if (!alive(tok)) { handlers.buzz = null; return; }
 
-        // Lights on. The mic opens now so it is already listening when you ring in.
+        // Lights on.
         armed = true;
         setLit(true);
         JPAudio.play('lights');
-        earStart((S.buzzWindowSeconds + S.answerSeconds) * 1000 + 500);
         let userOut = false;
         let seqIdx = 0;
         let resolved = false;
@@ -1850,7 +1846,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     }
                 }
             } else if (ev.type == 'contestant') {
-                earStop();
                 if (next && !userOut) G.stats.buzzLost++;
                 JPAudio.play('buzz');
                 lightPodium(ev.who);
@@ -1887,17 +1882,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                         setLit(true);
                         lightPodium(null);
                         JPAudio.play('lights');
-                        if (!userOut) earStart((S.buzzWindowSeconds + S.answerSeconds) * 1000 + 500);
                         setHint(userOut ? 'Rebound.' : 'Rebound — press <span class="jp-key">' + buzzKeyName() + '</span> to ring in.');
                     }
                 }
             } else { // timeout
-                earStop();
                 await revealCorrect(info, tok, false);
                 resolved = true;
             }
         }
-        earStop();
         handlers.buzz = null;
         if (userRec) {
             // Those who actually followed you are the ones whose money moves with your result
@@ -1955,18 +1947,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // You rang in (or it's your Daily Double): listen / read the input, judge,
     // show the verdict with a short y/n override window, apply the money.
-    // A recognizer started when the lights come on, so it is already running
-    // when you ring in (Chrome takes a moment to start one, which used to
-    // swallow the first word). Whoever wins the buzz decides what happens to it.
-    let earListener = null;
-    function earStart(ms) {
-        if (!(S.answerMode == 'speech' && JPAudio.recognitionSupported())) return;
-        earStop();
-        earListener = JPAudio.listen(ms, null, { endOnFinal: false });
-    }
-    function earStop() { if (earListener) { try { earListener.stop(); } catch (e) { } earListener = null; } }
-    function earTake() { let l = earListener; earListener = null; return (l && !l.done) ? l : null; }
-
+    // The microphone opens when you ring in and closes as soon as you've
+    // responded: the first finished phrase is your response, judged right
+    // away, right or wrong (no second tries -- a live game doesn't give those,
+    // and an open mic changes how headphones sound).
     async function userAnswers(info, seconds, tok, amount) {
         G.stats.answered++;
         let useSpeech = S.answerMode == 'speech' && JPAudio.recognitionSupported();
@@ -1974,10 +1958,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         setTimer(seconds, 'red');
         setHint(useSpeech ? 'Say your response (or type it and press <span class="jp-key">Enter</span>).' : 'Type your response and press <span class="jp-key">Enter</span>.');
         setSub('<span class="jp-who">You:</span> …');
-        let correctText = info.correct;
 
         let got = await new Promise(function(resolve) {
-            let done = false, listener = null, interim = '', phrases = [ ];   // phrases: every finished phrase heard, newest last
+            let done = false, listener = null, interim = '', phrases = [ ];   // phrases: the finished phrase heard, with its alternatives
             let deadline = JPClock.now() + seconds * 1000;
             function finish(typed) {
                 if (done) return;
@@ -1990,42 +1973,36 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             let timeUp = false;
             let t = JPClock.setTimeout(function() {
-                // Time's up: let the recognizer finish the phrase in flight (the
-                // studio ear may still be transcribing it), then judge.
+                // Time's up. If a phrase is in flight (the studio ear may still be
+                // transcribing what you just said), give it a moment; then judge.
                 timeUp = true;
-                if (listener && useSpeech) { try { listener.stop(); } catch (e) { } setTimeout(function() { finish(U.input.value); }, 5000); }
+                if (listener && useSpeech) { try { listener.stop(); } catch (e) { } setTimeout(function() { finish(U.input.value); }, 4000); }
                 else finish(U.input.value);
             }, seconds * 1000);
             handlers.submit = function(text) { finish(text); };
 
-            // Each finished phrase is judged on its own as it arrives (with its
-            // alternatives): a match ends the window at once; a miss keeps the
-            // mic open so you can say it again while the clock runs.
-            function onHeard(base, text, gotFinal, segments) {
+            function onHeard(text, gotFinal, segments) {
                 interim = text;
                 U.heard.textContent = text ? '“' + text + '”' : '';
-                if (!gotFinal || !segments) return;
-                for (let seg of segments.slice(phrases.length - base)) {   // segments are per recognizer session
-                    phrases.push(seg);
-                    if (JPJudge.judgeAny(seg, correctText).correct) { finish(U.input.value); return; }
-                }
+                if (!gotFinal || !segments || !segments.length) return;
+                phrases = segments.slice();
+                finish(U.input.value);
             }
             function attach(l) {
                 listener = l;
-                let base = phrases.length;
-                l.onInterim = function(text, gotFinal, segments) { onHeard(base, text, gotFinal, segments); };
+                l.onInterim = onHeard;
                 l.then(function(r) {
-                    if (listener !== l) return;              // superseded after a pause
-                    if (done) return;
+                    if (listener !== l || done) return;         // superseded after a pause, or finished
+                    if (r.segments && r.segments.length && !phrases.length) { phrases = r.segments.slice(); finish(U.input.value); return; }
                     if (timeUp) { finish(U.input.value); return; }
                     if (JPClock.paused) return;
                     if (r.error && r.error != 'no-speech' && r.error != 'aborted') { U.mic.className = 'jp-mic'; U.mic.textContent = 'Mic: ' + r.error + ' — type it'; return; }
-                    // Chrome ended the recognizer on silence; keep listening while there is time.
+                    // The recognizer ended on silence with nothing heard; keep listening while there is time.
                     let remaining = deadline - JPClock.now();
                     if (remaining > 600) startListening(remaining); else finish(U.input.value);
                 });
             }
-            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: false })); }
+            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: true })); }
             // The recognizer can't be paused, so stop it on pause and start a
             // fresh one for the remaining time on resume.
             function onPauseAnswer() { if (listener) { let l = listener; listener = null; l.stop(); } }
@@ -2036,7 +2013,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             JPClock.onPause(onPauseAnswer);
             JPClock.onResume(onResumeAnswer);
-            if (useSpeech) { let early = earTake(); if (early) attach(early); else startListening(seconds * 1000); }
+            if (useSpeech) startListening(seconds * 1000);
         });
         if (!alive(tok)) return { correct: false };
         clearTimer();

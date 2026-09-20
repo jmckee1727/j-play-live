@@ -4,6 +4,13 @@ Play archived *Jeopardy!* games live on [J! Archive](https://j-archive.com): the
 each clue aloud, you ring in against the original contestants, and you answer by voice.
 Built on top of **j-play 1.4.0** by Wayne Davison (the original "review" mode is still there).
 
+## Try it (before the Chrome Web Store listing is live)
+
+Friends-and-family install page, with the download and the steps in plain language:
+**https://jmckee1727.github.io/j-play-live/**. The zip behind the button is the newest
+[release](https://github.com/jmckee1727/j-play-live/releases/latest) (`j-play-live.zip`,
+the exact package built by `build.sh`).
+
 ## Install (unpacked)
 
 1. Open `chrome://extensions` in Chrome.
@@ -42,12 +49,15 @@ about 210 MB for the GPU build or 80 MB for the CPU build; a "small" model is of
 results on names), executed by ONNX Runtime in the same hidden extension page as the voice. It is
 the same every time, doesn't depend on Google's speech service, and nothing you say leaves the
 machine. Under **Recognition** in Settings, click **Download the studio ear**; it loads with each
-game. The game opens the microphone once, listens for an utterance (a simple energy detector finds
-where you start and stop), and judges each finished phrase as it arrives — a miss keeps the mic open
-for a repeat while the clock runs. Chrome's built-in recognizer remains available as the other
-option and is used automatically until the studio ear is downloaded. **Mic log** in the same
-section shows what the recognizer did on recent clues, which is the first thing to look at if
-answers aren't being heard.
+game. Whichever recognizer is in use, the microphone comes on only when you ring in (and while
+you pick clues by voice on your own board), never while someone else has the clue; the first phrase
+you finish is your response and is judged on the spot, right or wrong; and the mic is released as
+soon as you've answered (an open mic also changes how Bluetooth headphones sound). The studio ear
+cuts the feed into utterances with a simple energy detector, watches the feed while it's open, and
+reopens the mic if the stream goes dead (a Mac with AirPods can do that). Chrome's built-in
+recognizer remains available as the other option and is used automatically until the studio ear
+is downloaded. **Mic log** in the same section shows what the recognizer and the microphone did on
+recent clues, which is the first thing to look at if answers aren't being heard.
 
 Pieces: `offscreen/ear.js` runs Whisper (through `vendor/transformers.min.js`); `ear.js` (`JPEar`)
 captures the microphone on the game page and cuts it into utterances; `JPAudio.listen` routes to it

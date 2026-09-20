@@ -21,6 +21,24 @@ Bump `"version"` in `manifest.json` (the store rejects a version it has already 
 item → Package → **Upload new package** with the new zip, and Submit for review again. Users get
 the update automatically. Commit the new zip to the `packages` branch too if you want the record.
 
+## Sharing outside the store (friends and family)
+
+The install page at https://jmckee1727.github.io/j-play-live/ (`index.html`, served by GitHub
+Pages from `main`) links to the newest GitHub release's `j-play-live.zip`, which people unzip and
+**Load unpacked** in `chrome://extensions`. To publish a new version there:
+
+```sh
+./build.sh                                   # dist/j-play-live-<ver>.zip
+cp dist/j-play-live-<ver>.zip dist/j-play-live.zip
+gh release create v<ver> dist/j-play-live-<ver>.zip dist/j-play-live.zip \
+    --title "J-Play Live <ver>" --notes "What changed…"
+```
+
+The stable name matters: the page's button points at
+`releases/latest/download/j-play-live.zip`, so each new release updates it automatically.
+Unpacked copies don't update themselves; the page tells people how to replace the folder.
+Once the store listing is live, add the store link to the page and tell people to switch.
+
 ## Things to keep in mind
 
 - **Trademarks.** "Jeopardy!" is Jeopardy Productions' trademark. The listing uses the word to

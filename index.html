@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J-Play Live — play archived Jeopardy! games</title>
+<meta name="description" content="A free Chrome extension that turns any game on J! Archive into a live game: the host reads the clues, you ring in and answer by voice, racing the original contestants.">
+<style>
+  :root {
+    --bg: #f6f4ee; --panel: #fffdf8; --ink: #1d1c1a; --muted: #5d5a53; --line: #e2ddd1;
+    --blue: #0a2a8a; --blue-ink: #ffffff; --gold: #d4a017; --code: #eeeae0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161c; --panel: #1c1f27; --ink: #ecebe6; --muted: #a9a79f; --line: #2c3040; --blue: #3556d6; --code: #262a36; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  header { text-align: center; margin-bottom: 28px; }
+  h1 { font-size: 2.3em; line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.01em; }
+  h1 span { color: var(--blue); }
+  @media (prefers-color-scheme: dark) { h1 span { color: #8ea3ff; } }
+  .tag { display: inline-block; font-size: 0.8em; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; margin-bottom: 14px; }
+  .lede { font-size: 1.15em; color: var(--muted); margin: 0 auto; max-width: 600px; }
+  .download { text-align: center; margin: 26px 0 8px; }
+  .btn { display: inline-block; background: var(--blue); color: var(--blue-ink); text-decoration: none; font-weight: 700; font-size: 1.15em; padding: 14px 28px; border-radius: 12px; box-shadow: 0 6px 18px rgba(10,42,138,0.25); }
+  .btn:hover { filter: brightness(1.08); }
+  .btn small { display: block; font-weight: 400; font-size: 0.72em; opacity: 0.85; margin-top: 2px; }
+  .fine { text-align: center; color: var(--muted); font-size: 0.9em; margin: 6px 0 30px; }
+  .shot { display: block; width: 100%; border-radius: 12px; border: 1px solid var(--line); margin: 0 0 34px; }
+  h2 { font-size: 1.35em; margin: 36px 0 12px; }
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
+  ol.steps li { counter-increment: s; position: relative; padding: 16px 18px 16px 62px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  ol.steps li::before { content: counter(s); position: absolute; left: 18px; top: 16px; width: 30px; height: 30px; border-radius: 50%; background: var(--gold); color: #1d1c1a; font-weight: 800; text-align: center; line-height: 30px; }
+  ol.steps li b { display: block; font-size: 1.05em; margin-bottom: 4px; }
+  ol.steps li p { margin: 6px 0 0; }
+  .os { display: none; }
+  .os.show { display: block; }
+  .both .os { display: block; }
+  code { background: var(--code); border-radius: 6px; padding: 2px 7px; font-size: 0.92em; }
+  .copy { font: inherit; font-size: 0.82em; margin-left: 6px; padding: 2px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  .note { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  ul.tips { padding-left: 22px; }
+  ul.tips li { margin-bottom: 8px; }
+  a { color: var(--blue); }
+  @media (prefers-color-scheme: dark) { a { color: #8ea3ff; } }
+  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85em; }
+  footer p { margin: 6px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="tag">Preview build · free · open source · nothing collected</div>
+    <h1><span>J-Play Live</span></h1>
+    <p class="lede">Turns any game on <a href="https://j-archive.com">J! Archive</a> into a live game: the host reads the clues aloud, you ring in and answer by voice, and you race the three original contestants.</p>
+  </header>
+
+  <div class="download">
+    <a class="btn" id="dl" href="https://github.com/jmckee1727/j-play-live/releases/latest/download/j-play-live.zip">Download J-Play Live<small>zip · about 6 MB · for Google Chrome on Mac or Windows</small></a>
+  </div>
+  <p class="fine">Until it's in the Chrome Web Store, installing takes one extra step (about a minute).</p>
+
+  <img class="shot" src="store/screenshots/1-clue.png" alt="A clue on the board with the lights on, ready to ring in" width="1280" height="800">
+
+  <h2>Install</h2>
+  <ol class="steps" id="steps">
+    <li><b>Download the zip.</b>
+      <p>Use the button above; the file lands in your Downloads folder.</p>
+    </li>
+    <li><b>Unzip it, and keep the folder.</b>
+      <p class="os mac"><b style="display:inline">Mac:</b> double-click <code>j-play-live.zip</code> in your Downloads folder. A folder called <code>j-play-live</code> appears next to it.</p>
+      <p class="os win"><b style="display:inline">Windows:</b> right-click <code>j-play-live.zip</code> in Downloads, choose <b style="display:inline">Extract All…</b>, then <b style="display:inline">Extract</b>. You get a folder called <code>j-play-live</code>.</p>
+      <p>Move that folder somewhere it can stay (Documents is a good spot). Chrome runs the extension straight from the folder, so if you delete it later, the extension stops working.</p>
+    </li>
+    <li><b>Load it in Chrome.</b>
+      <p>Type <code>chrome://extensions</code> <button class="copy" data-copy="chrome://extensions">copy</button> into Chrome's address bar and press Enter. Turn on <b style="display:inline">Developer mode</b> (the switch at the top right), click <b style="display:inline">Load unpacked</b>, and choose the <code>j-play-live</code> folder.</p>
+      <p>That's it. If Chrome mentions that you have developer‑mode extensions, that's just this one; you can dismiss the message.</p>
+    </li>
+    <li><b>Play.</b>
+      <p>Open any game on J! Archive, for example <a href="https://j-archive.com/showgame.php?game_id=9537">this one</a>, and click the <b style="display:inline">▶ Play Live</b> button that appears above the board. Allow the microphone when Chrome asks. Choose a difficulty, and start.</p>
+    </li>
+  </ol>
+
+  <h2>Tips for the first game</h2>
+  <ul class="tips">
+    <li><b>Ring in with the space bar</b> once the lights come on around the clue (after the host finishes reading; ringing in early locks you out for a moment, just like the show). Then say your response, "What is…", and the host judges it.</li>
+    <li><b>The studio voice and the studio ear.</b> On the setup screen, click <b>Check my computer</b>. If your computer is up to it, download the <b>studio voice</b> (a natural host voice, about 330 MB) and the <b>studio ear</b> (speech recognition that runs on your own computer, about 210 MB, and doesn't care how good the Wi‑Fi is). Both are one-time downloads; nothing is sent anywhere afterward. Without them the game uses Chrome's built-in voice and recognizer, which work too.</li>
+    <li><b>Press Esc</b> to pause. From there you can change settings, fix a call the judge got wrong (<b>Edit results</b>), rewind to an earlier clue, or see the high scores.</li>
+    <li><b>Say the category and amount</b> to pick a clue when you have control of the board ("Potent Potables for 600"), or just click it.</li>
+  </ul>
+
+  <h2>When it reaches the Chrome Web Store</h2>
+  <div class="note">
+    The extension is under review at the Chrome Web Store. Once it's approved, install it from the store link (it'll be posted here), then remove this copy in <code>chrome://extensions</code>. Your settings and high scores carry over; they're saved by the site, not by the copy of the extension.
+    Until then, this copy doesn't update itself: to get a newer version, download the zip again, replace the <code>j-play-live</code> folder, and click the reload arrow on the extension's card in <code>chrome://extensions</code> (or just restart Chrome).
+  </div>
+
+  <h2>Requirements</h2>
+  <p>Google Chrome on a Mac or a PC (Edge and Brave work too; their extensions page is <code>edge://extensions</code> or <code>brave://extensions</code>). A microphone to answer by voice; you can also type responses. The studio voice and ear are optional downloads and run best on a computer with a graphics processor.</p>
+
+  <footer>
+    <p>Free and open source (MIT), built on <a href="https://github.com/WayneD/j-play">j-play</a> by Wayne Davison. Source, issues and release notes: <a href="https://github.com/jmckee1727/j-play-live">github.com/jmckee1727/j-play-live</a>. <a href="store/privacy-policy.html">Privacy policy</a> (short version: nothing is collected).</p>
+    <p>Not affiliated with Jeopardy Productions, Sony Pictures Television, or the J! Archive. <em>Jeopardy!</em> is a trademark of Jeopardy Productions, Inc. The game data is read from the J! Archive page you have open; nothing is copied or stored elsewhere.</p>
+  </footer>
+</main>
+<script>
+  // Put the reader's own system first in the unzip step; show both if we can't tell.
+  (function () {
+    var ua = navigator.userAgent || '';
+    var mac = /Macintosh|Mac OS X/.test(ua), win = /Windows/.test(ua);
+    var steps = document.getElementById('steps');
+    if (mac) document.querySelector('.os.mac').classList.add('show');
+    else if (win) document.querySelector('.os.win').classList.add('show');
+    else steps.classList.add('both');
+    var btns = document.querySelectorAll('.copy');
+    for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
+      var b = this, t = b.getAttribute('data-copy');
+      try { navigator.clipboard.writeText(t).then(function () { b.textContent = 'copied'; setTimeout(function () { b.textContent = 'copy'; }, 1500); }); } catch (e) { }
+    });
+  })();
+</script>
+</body>
+</html>

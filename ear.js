@@ -1,7 +1,8 @@
 // ear.js -- JPEar: the game page's side of the studio ear (on-device speech
-// recognition). It opens the microphone once, listens for utterances (a
-// simple energy detector finds where speech starts and stops), and sends each
-// one to the recognizer in the offscreen page (offscreen/ear.js, Whisper).
+// recognition). It opens the microphone while listening, cuts the feed into
+// utterances (a simple energy detector finds where speech starts and stops),
+// and sends each one to the recognizer in the offscreen page (offscreen/ear.js,
+// Whisper).
 //
 // JPEar.listen(ms, onInterim, opts) has the same shape as JPAudio's Chrome
 // recognizer, so the game uses either without knowing:
@@ -54,54 +55,142 @@ var JPEar = (function() {
     async function unload() { try { await rpc('ear-unload'); } catch (e) { } state.loaded = false; state.size = null; state.device = null; emit('unloaded'); }
 
     // ---- the microphone --------------------------------------------------
-    let ctx = null, stream = null, source = null, proc = null;
+    let ctx = null, stream = null, source = null, proc = null, track = null;
     let ring = new Float32Array(RATE * 2), ringPos = 0;         // the last 2 s, for the pre-roll
     let session = null;                                          // the active listen(), if any
+    let opening = null;                                          // openMic() in flight
+    let sessionStart = 0;                                        // for log timestamps
+    function mlog(m) { JPEar.log.push({ t: Math.round(performance.now() - (sessionStart || performance.now())), m: m }); if (JPEar.log.length > 200) JPEar.log.shift(); }
 
-    async function openMic() {
-        if (proc) return true;
+    // The microphone opens when a listen() starts and closes shortly after the
+    // last one ends (an open mic changes how Bluetooth headphones sound, so it
+    // isn't held between clues). While it is open the feed is watched: a stream
+    // can go dead on some systems (a Mac with AirPods switching profiles, a
+    // device change), turning into exact zeros while a fresh one would be fine;
+    // then, or when the track ends, the mic is reopened.
+    let closeTimer = null;
+    function openMic() {
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        if (proc) return Promise.resolve(true);
+        if (opening) return opening;
+        opening = openMicNow().then(function(ok) { opening = null; return ok; }, function(e) { opening = null; state.micError = (e && e.message) || 'mic error'; return false; });
+        return opening;
+    }
+    async function openMicNow() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { state.micError = 'no microphone access'; return false; }
+        let st;
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-        } catch (e) { state.micError = e && e.name == 'NotAllowedError' ? 'not-allowed' : (e && e.message) || 'mic error'; return false; }
+            st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+        } catch (e) { state.micError = e && e.name == 'NotAllowedError' ? 'not-allowed' : (e && e.message) || 'mic error'; mlog('mic open failed: ' + state.micError); return false; }
+        if (proc) { st.getTracks().forEach(function(t) { t.stop(); }); return true; }   // someone else opened it meanwhile
+        stream = st;
+        track = stream.getAudioTracks()[0] || null;
         let AC = window.AudioContext || window.webkitAudioContext;
-        try { ctx = new AC({ sampleRate: RATE }); } catch (e) { ctx = new AC(); }
+        // The context runs at the device's own rate; the feed is resampled here.
+        // (Forcing 16 kHz on the context has its own quirks on some systems.)
+        ctx = new AC();
+        if (ctx.state != 'running') { try { await ctx.resume(); } catch (e) { } }
+        if (ctx.state != 'running') {
+            // Started before any user gesture: resume on the next one.
+            let tryResume = function() { if (ctx) ctx.resume().catch(function() { }); document.removeEventListener('click', tryResume, true); document.removeEventListener('keydown', tryResume, true); };
+            document.addEventListener('click', tryResume, true); document.addEventListener('keydown', tryResume, true);
+        }
         source = ctx.createMediaStreamSource(stream);
         proc = ctx.createScriptProcessor(4096, 1, 1);
-        let ratio = ctx.sampleRate / RATE;                       // 1 when the context runs at 16 kHz
+        let ratio = ctx.sampleRate / RATE, mine = proc;
         proc.onaudioprocess = function(ev) {
-            let inp = ev.inputBuffer.getChannelData(0);
-            let out;
-            if (ratio == 1) out = inp;
-            else { let n = Math.floor(inp.length / ratio); out = new Float32Array(n); for (let i = 0; i < n; i++) out[i] = inp[Math.floor(i * ratio)]; }
-            feed(out);
+            if (proc !== mine) return;
+            feed(decimate(ev.inputBuffer.getChannelData(0), ratio));
         };
         source.connect(proc);
         proc.connect(ctx.destination);                            // Chrome only runs a ScriptProcessor that is connected; it outputs silence
+        zeroRun = 0; pendLen = 0;
+        let ts = (track && track.getSettings) ? track.getSettings() : { };
+        mlog('mic open: ' + (track ? track.label : '?') + ' (' + (ts.sampleRate || '?') + ' Hz in, context ' + ctx.sampleRate + ' Hz ' + ctx.state + ')');
+        if (track) {
+            track.onmute = function() { mlog('mic track muted by the system'); };
+            track.onunmute = function() { mlog('mic track unmuted'); };
+            track.onended = function() { if (track === this) reopenMic('track ended'); };
+        }
+        let myCtx = ctx;
+        ctx.onstatechange = function() { if (ctx === myCtx) mlog('audio context ' + myCtx.state); };
         state.micError = null;
         return true;
     }
     function closeMic() {
-        try { if (proc) { proc.disconnect(); proc.onaudioprocess = null; } if (source) source.disconnect(); if (stream) stream.getTracks().forEach(function(t) { t.stop(); }); if (ctx) ctx.close(); } catch (e) { }
-        proc = null; source = null; stream = null; ctx = null;
+        try { if (proc) { proc.disconnect(); proc.onaudioprocess = null; } if (source) source.disconnect(); if (track) { track.onended = null; track.onmute = null; track.onunmute = null; } if (stream) stream.getTracks().forEach(function(t) { t.stop(); }); if (ctx) { ctx.onstatechange = null; ctx.close().catch(function() { }); } } catch (e) { }
+        proc = null; source = null; stream = null; ctx = null; track = null;
+        zeroRun = 0; pendLen = 0;
+        ring.fill(0); ringPos = 0;                                // no stale pre-roll next time
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+    }
+    // Close a little after the last session ends, so back-to-back sessions reuse the stream.
+    function releaseMic() {
+        if (session || closeTimer || !stream) return;
+        closeTimer = setTimeout(function() { closeTimer = null; if (!session) closeMic(); }, 400);
     }
     function micLabel() { let t = stream && stream.getAudioTracks()[0]; return t ? t.label : ''; }
+    function micState() {
+        if (!stream) return 'not open';
+        let t = track || stream.getAudioTracks()[0];
+        return (t ? t.label + ' ' + t.readyState + (t.muted ? ' muted' : '') : 'no track') + (ctx ? ', context ' + ctx.state : '');
+    }
+
+    let reopening = false, reopens = 0, lastReopen = -1e9;
+    function reopenMic(why) {
+        if (reopening || !stream) return;
+        let now = performance.now();
+        // Not more than once every few seconds; and if reopening never brings
+        // audio (a muted headset, say), back off to once a minute.
+        if (now - lastReopen < (reopens >= 5 ? 60000 : 6000)) return;
+        reopening = true; reopens++; lastReopen = now;
+        mlog('mic ' + why + ' (' + micState() + '); reopening');
+        closeMic();
+        openMic().then(function(ok) {
+            reopening = false;
+            if (!ok) mlog('mic reopen failed: ' + state.micError);
+        });
+    }
+
+    // Box-filter decimation from the context's rate to 16 kHz (ratio 3 at 48 kHz).
+    function decimate(inp, ratio) {
+        if (ratio == 1) return inp;
+        let n = Math.floor(inp.length / ratio), out = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            let a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio)), s = 0;
+            for (let j = a; j < b; j++) s += inp[j];
+            out[i] = s / (b - a);
+        }
+        return out;
+    }
 
     // ---- utterance detection ----------------------------------------------
     // Energy over 32 ms frames against a noise floor that adapts to the room.
     const FRAME = 512;                                            // 32 ms at 16 kHz
     let noise = 0.004, level = 0;
+    let pend = new Float32Array(FRAME), pendLen = 0;             // samples waiting to make a whole frame
+    let zeroRun = 0;                                              // consecutive samples of exact digital silence
+    const DEAD_AFTER = RATE * 1.5;                                // 1.5 s of exact zeros: the stream is dead
     function rms(buf, from, to) { let s = 0; for (let i = from; i < to; i++) s += buf[i] * buf[i]; return Math.sqrt(s / Math.max(1, to - from)); }
 
     function feed(chunk) {
         // the ring buffer keeps the last two seconds for the pre-roll
         for (let i = 0; i < chunk.length; i++) { ring[ringPos] = chunk[i]; ringPos = (ringPos + 1) % ring.length; }
-        for (let off = 0; off + FRAME <= chunk.length; off += FRAME) {
-            let e = rms(chunk, off, off + FRAME);
-            level = e;
-            if (!session || !session.inSpeech) noise = noise * 0.97 + e * 0.03;   // adapt only when nobody is talking
-            if (session) session.frame(chunk.subarray(off, off + FRAME), e);
+        // whole 32 ms frames, carrying the remainder to the next chunk
+        let i = 0;
+        while (i < chunk.length) {
+            let take = Math.min(FRAME - pendLen, chunk.length - i);
+            pend.set(chunk.subarray(i, i + take), pendLen); pendLen += take; i += take;
+            if (pendLen == FRAME) { pendLen = 0; frameIn(pend); }
         }
+    }
+    function frameIn(frame) {
+        let e = rms(frame, 0, FRAME);
+        level = e;
+        if (e === 0) { zeroRun += FRAME; if (zeroRun >= DEAD_AFTER) { zeroRun = 0; reopenMic('feed is digital silence'); } }
+        else { zeroRun = 0; reopens = 0; }
+        if (!session || !session.inSpeech) noise = noise * 0.97 + e * 0.03;   // adapt only when nobody is talking
+        if (session) session.frame(frame, e);
     }
     function preroll(ms) {
         let n = Math.min(ring.length, Math.floor(RATE * ms / 1000)), out = new Float32Array(n);
@@ -179,20 +268,23 @@ var JPEar = (function() {
                 done = true; handle.done = true;
                 clearTimeout(timer);
                 if (session === s) session = null;
+                releaseMic();
                 resolve({ text: text, alternatives: segments.length ? segments[segments.length - 1].slice() : [ ], final: gotFinal, error: err, segments: segments });
             }
             let timer = setTimeout(function() { stopFn(); }, ms);
             stopFn = function() {
                 if (done || stopping) return;
                 stopping = true;
-                if (s.inSpeech && s.speechFrames >= 3) s.flush(true);      // hear out what was being said
+                // Hear out what was being said -- unless one phrase was all that was wanted and it's in.
+                if (s.inSpeech && s.speechFrames >= 3 && !(opts.endOnFinal && gotFinal)) s.flush(true);
                 if (!pending) finish(); else setTimeout(finish, 4000);     // but don't wait forever for it
             };
             openMic().then(function(ok) {
                 if (!ok) { err = state.micError || 'audio-capture'; if (err == 'not-allowed') err = 'not-allowed'; finish(); return; }
                 if (session) { try { session.flush(false); } catch (e) { } }
-                session = s;
-                log('listening (' + ms + ' ms)');
+                session = s; sessionStart = s.started;
+                log('listening (' + ms + ' ms; ' + micState() + ', level ' + level.toFixed(3) + ', floor ' + noise.toFixed(3) + ')');
+                if (zeroRun >= RATE / 2) { zeroRun = 0; reopenMic('feed silent at the start of listening'); }   // don't wait for the watchdog
             });
         });
         p.stop = function() { stopFn(); };
@@ -206,7 +298,7 @@ var JPEar = (function() {
 
     return {
         available: available, caps: caps, load: load, unload: unload, listen: listen, onStatus: onStatus,
-        openMic: openMic, closeMic: closeMic, micLabel: micLabel, active: active,
+        openMic: openMic, closeMic: closeMic, micLabel: micLabel, micState: micState, active: active,
         get state() { return state; }, get ready() { return state.loaded; }, get level() { return level; }, get noise() { return noise; },
         set enabled(v) { state.enabled = !!v; }, get enabled() { return state.enabled; },
         log: [ ],

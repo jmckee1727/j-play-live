@@ -238,7 +238,7 @@
     background: #0000AF;
     background: linear-gradient(180deg, #1a24d9 0%, #00008c 100%);
     text-align: center;
-    padding: 6px 8px 8px;
+    padding: 24px 8px 8px;            /* the top band holds the +/- change (left) and the control marker (right) */
     position: relative;
     transition: box-shadow 0.15s;
 }
@@ -252,7 +252,7 @@
 }
 .jp-podium .jp-pscore.jp-neg { color: #ff5c5c; }
 .jp-podium .jp-pname { font-family: "Comic Sans MS", "Marker Felt", "Segoe Print", cursive; font-size: 1.5em; font-weight: bold; text-shadow: 2px 2px 2px #000; }
-.jp-podium .jp-pdelta { position: absolute; left: 8px; top: 4px; font-weight: bold; font-size: 0.95em; padding: 0 6px; border-radius: 3px; }
+.jp-podium .jp-pdelta { position: absolute; left: 8px; top: 3px; line-height: 1.25; font-weight: bold; font-size: 0.9em; padding: 0 6px; border-radius: 3px; }
 .jp-podium .jp-pdelta.jp-plus { background: #1c8f3c; }
 .jp-podium .jp-pdelta.jp-minus { background: #b02020; }
 .jp-podium .jp-pline { font-size: 0.9em; min-height: 1.2em; opacity: 0.95; text-shadow: 1px 1px 1px #000; }

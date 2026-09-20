@@ -37,7 +37,10 @@ playback; `vendor/` holds the engine (see `vendor/NOTICE.txt` for licenses).
 
 ## First run
 
-* On the setup screen click **Test microphone** once. Chrome will ask to allow the microphone
+* On the setup screen click **Test microphone** once. Besides what it heard, it reports which input
+  device Chrome is using and how loud you come in; if the level is low, the fix is in **System
+  Settings → Sound → Input** (pick the right microphone, raise Input volume) — the game can't turn
+  the mic up itself. Chrome will ask to allow the microphone
   for `j-archive.com`; allow it. (Speech recognition in Chrome is processed by Google's speech
   service, so audio leaves your machine while the mic is listening.)
 * Click **Test** next to the host voice to hear it. Any voice installed on your Mac is
@@ -54,7 +57,7 @@ playback; `vendor/` holds the engine (see `vendor/NOTICE.txt` for licenses).
 | --- | --- |
 | `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. |
 | `Enter` | Lock in a typed response or a wager (also moves on) |
-| `y` / `n` | Overrule the judge on your last response (until the next clue) |
+| `y` / `n` | Overrule the judge on your last response (until the next clue). The money, the rebound and control of the board all follow. |
 | **Rewind** (pause menu) | Every clue played so far, in order. Go back to the moment before any of them: that clue and everything after it are played again with the board, the money and control as they were; your responses from that point are cleared. |
 | **Edit results** (pause menu) | Every response of yours, each with Right / No response / Wrong. Change one and the money follows: yours, and that of anyone who rang in after you on that clue (mark yourself right and the rebound never happened; mark yourself wrong and it plays out as broadcast). The ring-in order and control of the board stay as they happened. |
 | `Esc` or the Pause button | Freeze everything: the buzzer race, the answer clock, the host's voice, the timer bar. Opening Settings pauses too. |

@@ -451,10 +451,39 @@ var JPAudio = (function() {
     // Never rejects. The returned promise has a .stop() to end early.
     // opts.endOnFinal: resolve as soon as the recognizer finalizes a phrase
     // (right for a 5-second answer); otherwise keep listening until stopped.
+    // Opens the microphone for a moment to report which input it is and how
+    // loud speech arrives (peak 0..1). Speech recognition itself has no gain
+    // control; a low reading means the system input volume, not the game.
+    function sampleInputLevel(ms) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve(null);
+        return navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+            let track = stream.getAudioTracks()[0];
+            let label = track ? track.label : '';
+            let AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) { stream.getTracks().forEach(function(t) { t.stop(); }); return { label: label, peak: 0 }; }
+            let ctx = new AC();
+            let src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
+            an.fftSize = 2048; src.connect(an);
+            let buf = new Float32Array(an.fftSize), peak = 0;
+            return new Promise(function(resolve) {
+                let t0 = Date.now();
+                (function tick() {
+                    an.getFloatTimeDomainData(buf);
+                    let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+                    let rms = Math.sqrt(sum / buf.length);
+                    if (rms > peak) peak = rms;
+                    if (Date.now() - t0 < ms) requestAnimationFrame(tick);
+                    else { stream.getTracks().forEach(function(t) { t.stop(); }); ctx.close().catch(function() { }); resolve({ label: label, peak: Math.min(1, peak * 3) }); }
+                })();
+            });
+        }).catch(function() { return null; });
+    }
+
     function listen(ms, onInterim, opts) {
         opts = opts || { };
         let SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         let stopFn = function() { };
+        let handle = { onInterim: null, done: false };
         let p = new Promise(function(resolve) {
             if (!SR) { resolve({ text: '', alternatives: [ ], final: false, error: 'unsupported' }); return; }
             let rec;
@@ -464,13 +493,14 @@ var JPAudio = (function() {
             rec.continuous = !opts.endOnFinal;
             rec.maxAlternatives = 5;
 
-            let best = '', alts = [ ], done = false, gotFinal = false, err = null;
+            let best = '', alts = [ ], done = false, gotFinal = false, err = null, lastSegments = [ ];
             let finish = function() {
                 if (done) return;
                 done = true;
+                handle.done = true;
                 clearTimeout(timer);
                 try { rec.onresult = null; rec.onend = null; rec.onerror = null; rec.abort(); } catch (e) { }
-                resolve({ text: best.trim(), alternatives: alts, final: gotFinal, error: err });
+                resolve({ text: best.trim(), alternatives: alts, final: gotFinal, error: err, segments: lastSegments });
             };
             let timer = setTimeout(function() {
                 // Ask for a final result, then give it a beat to arrive.
@@ -479,19 +509,26 @@ var JPAudio = (function() {
             }, ms);
 
             rec.onresult = function(ev) {
-                let text = '', a = [ ];
+                let text = '', a = [ ], segments = [ ], finalCount = 0;
                 for (let i = 0; i < ev.results.length; i++) {
                     let r = ev.results[i];
                     text += r[0].transcript + ' ';
                     if (r.isFinal) {
                         gotFinal = true;
-                        for (let j = 0; j < r.length; j++)
-                            a.push(r[j].transcript);
+                        finalCount++;
+                        let seg = [ ];
+                        for (let j = 0; j < r.length; j++) seg.push(r[j].transcript);
+                        segments.push(seg);              // each finished phrase with its alternatives
+                        for (let j = 0; j < r.length; j++) a.push(r[j].transcript);
                     }
                 }
                 best = text;
                 if (a.length) alts = a;
-                if (onInterim) onInterim(best.trim(), gotFinal);
+                lastSegments = segments;
+                // The handler can be swapped after the fact (handle.onInterim), so a
+                // recognizer started early can be handed to whoever needs it next.
+                let cb = handle.onInterim || onInterim;
+                if (cb) cb(best.trim(), gotFinal, segments, text.trim());
                 if (gotFinal && opts.endOnFinal) finish();
             };
             rec.onerror = function(ev) { err = ev.error; if (ev.error == 'not-allowed' || ev.error == 'service-not-allowed' || ev.error == 'audio-capture') finish(); };
@@ -500,6 +537,9 @@ var JPAudio = (function() {
             try { rec.start(); } catch (e) { err = 'start'; finish(); }
         });
         p.stop = function() { stopFn(); };
+        p.handle = handle;                                  // .onInterim (swap the callback), .done
+        Object.defineProperty(p, 'onInterim', { set: function(f) { handle.onInterim = f; }, get: function() { return handle.onInterim; } });
+        Object.defineProperty(p, 'done', { get: function() { return handle.done; } });
         return p;
     }
 
@@ -519,7 +559,7 @@ var JPAudio = (function() {
         startLoop: startLoop,
         stopLoop: stopLoop,
         recognitionSupported: recognitionSupported,
-        listen: listen,
+        listen: listen, sampleInputLevel: sampleInputLevel,
         SFX_FILES: SFX_FILES,
     };
 })();

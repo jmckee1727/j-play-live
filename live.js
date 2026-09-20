@@ -29,8 +29,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         customSpread: 0.65,      // log-normal sigma: 0.4 tight, 0.65 normal, 0.9 wide
         buzzKey: ' ',            // ' ' | 'b' | 'j' | 'k' | 'Shift'
         hostVoice: '',           // voice name; '' = auto
-        rate: 1.08,                   // the host's reading speed (the studio voice is on the deliberate side at 1.0)
-        settingsVersion: 2,
+        rate: 1.15,                   // the host's reading speed; shown to the user relative to this (1.15 reads as 1.00×)
+        settingsVersion: 3,
         answerMode: 'speech',    // speech | typed
         contestantVoices: true,
         contestantEngine: 'neural',   // 'neural' (studio voices, when the host uses one) or 'system'
@@ -43,7 +43,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         lockoutMs: 250,
         ddAnswerSeconds: 8,
         fjSeconds: 30,
-        autoAdvanceMs: 1200,          // wait after a clue resolves before moving on (click/Space skips it)
+        autoAdvanceMs: 800,           // wait after a clue resolves before moving on (click/Space skips it)
         voiceEngine: 'neural',        // 'neural' = studio voice (on-device model), 'system' = OS voice
         neuralVoice: 'am_michael',
         neuralDevice: 'auto',         // auto | webgpu | wasm
@@ -54,6 +54,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // tail for the clues nobody is sure about (a second or two of thinking,
     // occasionally almost the whole window). sigma 0.65 puts about 16% of
     // ring-ins under 0.52x the median and 16% over 1.9x; 2.5% over 3.6x.
+    const BASE_RATE = 1.15;           // what the speed slider calls 1.00×
     const DIFFICULTY = {
         easy:     { median: 1000, sigma: 0.65, label: 'Easy (contestants typically ring in ~1 s after the lights)' },
         medium:   { median: 500,  sigma: 0.65, label: 'Medium (~0.5 s)' },
@@ -126,7 +127,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (saved.customMean && !saved.customMedian) saved.customMedian = saved.customMean;   // pre-0.4.1 settings
             delete saved.customMean; delete saved.customSd;
             // Settings saved before the default speed went up keep an untouched 1.00 slider: move it with the default.
-            if (!(saved.settingsVersion >= 2)) { if (saved.rate == null || +saved.rate == 1) saved.rate = DEFAULTS.rate; saved.settingsVersion = 2; }
+            if (!(saved.settingsVersion >= 2)) { if (saved.rate == null || +saved.rate == 1) saved.rate = 1.08; saved.settingsVersion = 2; }
+            // v3: the default speed became 1.15 and the pauses between clues shorter; settings still at the old defaults follow.
+            if (!(saved.settingsVersion >= 3)) {
+                if (saved.rate == null || Math.abs(+saved.rate - 1.08) < 0.001) saved.rate = DEFAULTS.rate;
+                if (saved.autoAdvanceMs == null || +saved.autoAdvanceMs == 1200 || +saved.autoAdvanceMs == 1800) saved.autoAdvanceMs = DEFAULTS.autoAdvanceMs;
+                saved.settingsVersion = 3;
+            }
             S = Object.assign({ }, DEFAULTS, saved);
         } catch (e) { S = Object.assign({ }, DEFAULTS); }
     }
@@ -535,6 +542,39 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         rec.outcome = outcome;
         applyResult(rec);
         reconcileOthers(rec);
+        followControl(rec);
+    }
+    // Control of the board follows your result on the clue just played: right,
+    // the board is yours; wrong, it goes to whoever answered right after you,
+    // or stays with the player who picked the clue. Earlier clues are left
+    // alone (the board has moved on since). If the change lands while the
+    // next pick is being made, the pick starts over with the right player.
+    function controlFor(rec) {
+        if (rec.outcome == 'right') return YOU;
+        let winner = (rec.others || [ ]).find(function(o) { return o.right && (rec.othersDelta || { })[o.who]; });
+        if (winner) return winner.who;
+        let snap = (G.history || [ ]).slice().reverse().find(function(h) { return h.num == rec.num; });
+        return snap ? snap.control : G.control;
+    }
+    function followControl(rec) {
+        if (rec.kind == 'fj') return;
+        let last = (G.results || [ ])[G.results.length - 1];
+        if (rec !== last) return;                                  // only the most recent clue
+        if (G.phase == 'clue') { if (G.current && G.current.num == rec.num) G.pendingControl = true; return; }   // settled when the clue ends
+        if (G.phase != 'pick') return;
+        let who = controlFor(rec);
+        if (who == G.control) return;
+        setControl(who);
+        restartPick();
+    }
+    let pickListener = null;
+    function restartPick() {
+        runToken++;
+        let tok = runToken;
+        handlers = { buzz: null, override: null, cont: null, pick: null, submit: null };
+        if (pickListener) { try { pickListener.stop(); } catch (e) { } pickListener = null; }
+        JPAudio.stopSpeaking();
+        runGame(tok, G.round, true);
     }
     // The contestants who rang in after you (rec.others, in broadcast order, with
     // the money each one's archived response is worth). If you were right they
@@ -709,7 +749,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
               ' <button class="jp-btn jp-secondary jp-mic-test" style="padding:3px 10px;font-size:0.9em">Test microphone</button> <span class="jp-mic-result jp-note"></span>' +
               '<div style="margin-top:4px"><label><input type="checkbox" data-s="voicePick"' + (S.voicePick ? ' checked' : '') + '>Pick clues by voice too, when you have the board ("Science for 600", "same category, 800"); clicking always works</label></div></td></tr>' +
             '<tr><td>Host voice</td><td>' + voiceSection(vopts) + '</td></tr>' +
-            '<tr><td>Reading speed</td><td><input type="range" data-s="rate" min="0.7" max="1.5" step="0.05" value="' + (+S.rate) + '"> <span class="jp-rate-val">' + (+S.rate).toFixed(2) + '×</span></td></tr>' +
+            '<tr><td>Reading speed</td><td><input type="range" class="jp-rate" min="0.6" max="1.4" step="0.05" value="' + (S.rate / BASE_RATE).toFixed(2) + '"> <span class="jp-rate-val">' + (S.rate / BASE_RATE).toFixed(2) + '×</span></td></tr>' +
             '<tr><td>Contestants speak</td><td><label><input type="checkbox" data-s="contestantVoices"' + (S.contestantVoices ? ' checked' : '') + '>Read their responses aloud in their own voices</label> ' +
               '<select data-s="contestantEngine" style="min-width:16em;margin-left:8px"><option value="neural"' + (S.contestantEngine != 'system' ? ' selected' : '') + '>studio voices (with the studio host)</option><option value="system"' + (S.contestantEngine == 'system' ? ' selected' : '') + '>system voices</option></select></td></tr>' +
             '<tr><td>Read categories</td><td><label><input type="checkbox" data-s="readCategories"' + (S.readCategories ? ' checked' : '') + '>Host reads the categories at the start of each round</label></td></tr>' +
@@ -912,13 +952,17 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (inp.type == 'checkbox') S[key] = inp.checked;
                 else if (inp.type == 'number' || inp.type == 'range') S[key] = +inp.value;
                 else S[key] = inp.value;
-                if (key == 'rate') panel.querySelector('.jp-rate-val').textContent = (+S.rate).toFixed(2) + '×';
+
                 if (key == 'sfx') JPAudio.setEnabled(S.sfx);
-                if (key == 'hostVoice' || key == 'rate' || key == 'neuralVoice') setupVoices();
+                if (key == 'hostVoice' || key == 'neuralVoice') setupVoices();
                 saveSettings();
             });
-            if (inp.type == 'range') inp.addEventListener('input', function() { panel.querySelector('.jp-rate-val').textContent = (+inp.value).toFixed(2) + '×'; });
         });
+        let rateEl = panel.querySelector('.jp-rate');
+        if (rateEl) {
+            rateEl.addEventListener('input', function() { panel.querySelector('.jp-rate-val').textContent = (+rateEl.value).toFixed(2) + '×'; });
+            rateEl.addEventListener('change', function() { S.rate = Math.round(+rateEl.value * BASE_RATE * 1000) / 1000; setupVoices(); saveSettings(); });
+        }
         let vt = panel.querySelector('.jp-voice-test');
         if (vt) vt.onclick = function() { setupVoices(); hostSay('This is Jeopardy! Let\'s play. For 800: this planet is the largest in our solar system.'); };
         let mt = panel.querySelector('.jp-mic-test');
@@ -926,11 +970,20 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let out = panel.querySelector('.jp-mic-result');
             if (!JPAudio.recognitionSupported()) { out.textContent = 'Speech recognition is not available in this browser.'; return; }
             out.textContent = 'Listening for 4 seconds — say something…';
+            let level = JPAudio.sampleInputLevel(4000);      // which mic, and how loud it comes in
             JPAudio.listen(4000, function(t) { out.textContent = 'Heard: "' + t + '"'; }).then(function(r) {
-                if (r.error == 'not-allowed' || r.error == 'service-not-allowed') out.textContent = 'Microphone permission was denied. Click the lock icon in the address bar to allow the microphone for j-archive.com.';
-                else if (r.error == 'audio-capture') out.textContent = 'No microphone found.';
-                else if (!r.text) out.textContent = 'Nothing heard' + (r.error ? ' (' + r.error + ')' : '') + '. Check the microphone permission for this site.';
-                else out.textContent = 'Heard: "' + r.text + '" — working.';
+                let msg;
+                if (r.error == 'not-allowed' || r.error == 'service-not-allowed') msg = 'Microphone permission was denied. Click the lock icon in the address bar to allow the microphone for j-archive.com.';
+                else if (r.error == 'audio-capture') msg = 'No microphone found.';
+                else if (!r.text) msg = 'Nothing heard' + (r.error ? ' (' + r.error + ')' : '') + '. Check the microphone permission for this site.';
+                else msg = 'Heard: "' + r.text + '" — working.';
+                out.textContent = msg;
+                level.then(function(lv) {
+                    if (!lv) return;
+                    let pct = Math.round(lv.peak * 100);
+                    let verdict = pct < 15 ? ' — quiet: raise Input volume in System Settings → Sound → Input, or move closer to the mic' : pct < 35 ? ' — a little low; more Input volume in System Settings → Sound would help' : ' — good';
+                    out.textContent = msg + '  ·  Input: ' + (lv.label || 'default microphone') + ', peak level ' + pct + '%' + verdict + '.';
+                });
             });
         };
     }
@@ -1126,10 +1179,22 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (items.length == 2) return items[0] + ' and ' + items[1];
         return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
     }
+    // Standings order: by money, and on a tie you rank above the contestants
+    // (they keep podium order among themselves). ranked(scores) is high to low.
+    function ranked(scores) {
+        let base = realNames().concat([ YOU ]);
+        let names = base.slice();
+        names.sort(function(a, b) {
+            if (scores[b] != scores[a]) return scores[b] - scores[a];
+            if (a == YOU) return -1;
+            if (b == YOU) return 1;
+            return base.indexOf(a) - base.indexOf(b);
+        });
+        return names;
+    }
     // "Holly leads with $8,000. Mark has $5,000, you have $3,000, and Michael has $2,000."
     function standingsSentence() {
-        let names = realNames().concat([ YOU ]);
-        names.sort(function(a, b) { return G.scores[b] - G.scores[a]; });
+        let names = ranked(G.scores);
         let groups = [ ];
         for (let n of names) {
             let g = groups[groups.length - 1];
@@ -1160,11 +1225,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function roundEndLine(round) {
         return round == 'J' ? 'And that\'s the end of the Jeopardy round.' : 'That\'s the end of Double Jeopardy. Coming up: Final Jeopardy.';
     }
-    function placeOf(who, scores) {
-        let names = realNames().concat([ YOU ]);
-        names.sort(function(a, b) { return scores[b] - scores[a]; });
-        return names.indexOf(who);
-    }
+    function placeOf(who, scores) { return ranked(scores).indexOf(who); }
 
     async function startGame() {
         runToken++;
@@ -1202,10 +1263,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         }
         if ((fromRound == 'J' || fromRound == 'DJ') && roundNums('DJ').length) {
             if (!resumed) {
-                // Lowest score picks first in Double Jeopardy!
-                let names = realNames().concat([ YOU ]);
-                names.sort(function(a, b) { return G.scores[a] - G.scores[b]; });
-                setControl(names[0]);
+                // Lowest score picks first in Double Jeopardy! (the last-ranked player; ties rank you higher)
+                let names = ranked(G.scores);
+                setControl(names[names.length - 1]);
             }
             await playRound('DJ', tok, resumed);
             if (!alive(tok)) return;
@@ -1325,7 +1385,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (!alive(tok)) return;
             if (!r.skipped) { await sleep(500, tok); if (!alive(tok)) return; }
         } else if (!r.skipped) {
-            await pause(1500, tok);
+            await pause(900, tok);
             if (!alive(tok)) return;
         }
         if (!r.skipped) {
@@ -1339,6 +1399,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         while (alive(tok)) {
             let remaining = roundNums(round).filter(function(n) { return !G.played[n]; });
             if (!remaining.length) break;
+            G.phase = 'pick';
             let num;
             if (remaining.length == 1) {
                 // The last clue picks itself; the host announces it, whoever has the board.
@@ -1367,7 +1428,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 podiumLine(G.control, '&ldquo;' + esc(info.category.name) + ' for ' + money(info.value) + '&rdquo;');
                 await contestantSay(G.control, JPReader.categoryToSpeech(info.category.name) + ' for ' + info.value);
                 if (!alive(tok)) return;
-                await sleep(S.contestantVoices ? 250 : 1100, tok);
+                await sleep(S.contestantVoices ? 150 : 700, tok);
                 if (!alive(tok)) return;
             }
             pushHistory(round, num);
@@ -1375,12 +1436,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (!alive(tok)) return;
         }
 
+        G.phase = 'other';
         JPAudio.play('roundend');
         showPanel('<h1>End of the ' + roundTitle(round) + '</h1>' + standingsTable() + '<p class="jp-note">Click or press <span class="jp-key">' + buzzKeyName() + '</span> to continue.</p>').classList.add('jp-clickthrough');
         setHint('');
         let e = await hostSaySkippable(roundEndLine(round), tok, 1);
         if (!alive(tok)) return;
-        if (!e.skipped) await pause(4500, tok);
+        if (!e.skipped) await pause(2500, tok);
     }
 
     // The host reads the six categories the way the show does: one at a time,
@@ -1549,6 +1611,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                         let n = parsePick(text, G.round);
                         if (n != null) { let cell = boardCell(n); if (cell) cell.classList.add('jp-picking'); finish(n); }
                     }, { endOnFinal: false });
+                    pickListener = current;
                     let r = await current;
                     if (done) break;
                     if (r.text) { let n = parsePick(r.text, G.round); if (n != null) { finish(n); break; } }
@@ -1564,6 +1627,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     async function playClue(num, tok) {
         let info = clueInfo(num);
         G.current = info;
+        G.phase = 'clue';
+        G.pendingControl = false;
         G.played[num] = true;
         G.stats.clues++;
         handlers.override = null;
@@ -1572,7 +1637,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         lightPodium(null);
         setHeader(roundTitle(G.round), info.category.name, money(info.value));
         JPAudio.play('select');
-        await sleep(350, tok);
+        await sleep(200, tok);
         if (!alive(tok)) return;
 
         if (info.dd) {
@@ -1596,10 +1661,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await hostSay(info.queryText, 'clue');
         if (!alive(tok)) { handlers.buzz = null; return; }
 
-        // Lights on.
+        // Lights on. The mic opens now so it is already listening when you ring in.
         armed = true;
         setLit(true);
         JPAudio.play('lights');
+        earStart((S.buzzWindowSeconds + S.answerSeconds) * 1000 + 500);
         let userOut = false;
         let seqIdx = 0;
         let resolved = false;
@@ -1645,13 +1711,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     }
                 }
             } else if (ev.type == 'contestant') {
+                earStop();
                 if (next && !userOut) G.stats.buzzLost++;
                 JPAudio.play('buzz');
                 lightPodium(ev.who);
                 setLit(false);
                 responded[ev.who] = true;
                 events.push({ who: ev.who, right: ev.right });
-                await sleep(clamp(gauss(900, 250), 400, 1600), tok);
+                await sleep(clamp(gauss(650, 200), 300, 1200), tok);
                 if (!alive(tok)) break;
                 let text = ev.right ? (info.phrase + ' ' + JPJudge.stripHtml(info.abbrev) + '?') : (wrongResponseText(clues[num], ev.who) || '(an incorrect response)');
                 podiumLine(ev.who, '<span class="' + (ev.right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(text) + '</span>');
@@ -1681,14 +1748,17 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                         setLit(true);
                         lightPodium(null);
                         JPAudio.play('lights');
+                        if (!userOut) earStart((S.buzzWindowSeconds + S.answerSeconds) * 1000 + 500);
                         setHint(userOut ? 'Rebound.' : 'Rebound — press <span class="jp-key">' + buzzKeyName() + '</span> to ring in.');
                     }
                 }
             } else { // timeout
+                earStop();
                 await revealCorrect(info, tok, false);
                 resolved = true;
             }
         }
+        earStop();
         handlers.buzz = null;
         if (userRec) {
             // Those who actually followed you are the ones whose money moves with your result
@@ -1696,7 +1766,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let followed = events.slice(userAt);
             if (followed.length) userRec.others = followed.map(function(e) { return { who: e.who, right: e.right, delta: e.right ? info.value : -info.value }; });
             reconcileOthers(userRec);   // a "y" pressed while they were still answering
+            if (G.pendingControl) setControl(controlFor(userRec));   // ...and the board goes with it
         }
+        G.phase = 'pick';
         setLit(false);
         clearTimer();
         lightPodium(null);
@@ -1744,6 +1816,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // You rang in (or it's your Daily Double): listen / read the input, judge,
     // show the verdict with a short y/n override window, apply the money.
+    // A recognizer started when the lights come on, so it is already running
+    // when you ring in (Chrome takes a moment to start one, which used to
+    // swallow the first word). Whoever wins the buzz decides what happens to it.
+    let earListener = null;
+    function earStart(ms) {
+        if (!(S.answerMode == 'speech' && JPAudio.recognitionSupported())) return;
+        earStop();
+        earListener = JPAudio.listen(ms, null, { endOnFinal: false });
+    }
+    function earStop() { if (earListener) { try { earListener.stop(); } catch (e) { } earListener = null; } }
+    function earTake() { let l = earListener; earListener = null; return (l && !l.done) ? l : null; }
+
     async function userAnswers(info, seconds, tok, amount) {
         G.stats.answered++;
         let useSpeech = S.answerMode == 'speech' && JPAudio.recognitionSupported();
@@ -1751,45 +1835,56 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         setTimer(seconds, 'red');
         setHint(useSpeech ? 'Say your response (or type it and press <span class="jp-key">Enter</span>).' : 'Type your response and press <span class="jp-key">Enter</span>.');
         setSub('<span class="jp-who">You:</span> …');
+        let correctText = info.correct;
 
         let got = await new Promise(function(resolve) {
-            let done = false, listener = null, interim = '', lastHeard = null;
+            let done = false, listener = null, interim = '', phrases = [ ];   // phrases: every finished phrase heard, newest last
             let deadline = JPClock.now() + seconds * 1000;
-            function finish(typed, heard) {
+            function finish(typed) {
                 if (done) return;
                 done = true;
                 JPClock.clearTimeout(t);
                 JPClock.off(onPauseAnswer); JPClock.off(onResumeAnswer);
                 handlers.submit = null;
-                resolve({ typed: (typed || '').trim(), heard: heard || lastHeard || { text: interim, alternatives: [ ] } });
+                if (listener) { try { listener.stop(); } catch (e) { } }
+                resolve({ typed: (typed || '').trim(), phrases: phrases, interim: interim });
             }
             let t = JPClock.setTimeout(function() {
-                // Time's up: ask the recognizer for whatever it has, then judge.
-                if (listener) { listener.stop(); setTimeout(function() { finish(U.input.value, null); }, 450); }
-                else finish(U.input.value, null);
+                // Time's up: give the recognizer a beat to finish the phrase in flight, then judge.
+                if (listener && useSpeech) { try { listener.stop(); } catch (e) { } setTimeout(function() { finish(U.input.value); }, 450); }
+                else finish(U.input.value);
             }, seconds * 1000);
-            handlers.submit = function(text) { if (listener) listener.stop(); finish(text, null); };
+            handlers.submit = function(text) { finish(text); };
 
-            function startListening(ms) {
-                listener = JPAudio.listen(ms + 300, function(text) {
-                    interim = text;
-                    U.heard.textContent = text ? '“' + text + '”' : '';
-                }, { endOnFinal: true });
-                let mine = listener;
-                listener.then(function(r) {
-                    if (listener !== mine) return;   // superseded after a pause
-                    lastHeard = r;
+            // Each finished phrase is judged on its own as it arrives (with its
+            // alternatives): a match ends the window at once; a miss keeps the
+            // mic open so you can say it again while the clock runs.
+            function onHeard(base, text, gotFinal, segments) {
+                interim = text;
+                U.heard.textContent = text ? '“' + text + '”' : '';
+                if (!gotFinal || !segments) return;
+                for (let seg of segments.slice(phrases.length - base)) {   // segments are per recognizer session
+                    phrases.push(seg);
+                    if (JPJudge.judgeAny(seg, correctText).correct) { finish(U.input.value); return; }
+                }
+            }
+            function attach(l) {
+                listener = l;
+                let base = phrases.length;
+                l.onInterim = function(text, gotFinal, segments) { onHeard(base, text, gotFinal, segments); };
+                l.then(function(r) {
+                    if (listener !== l) return;              // superseded after a pause
                     if (done || JPClock.paused) return;
-                    if (r.text || r.final)
-                        finish(U.input.value, r);       // a finished phrase ends the answer window
-                    else if (r.error && r.error != 'no-speech' && r.error != 'aborted') {
-                        U.mic.className = 'jp-mic'; U.mic.textContent = 'Mic: ' + r.error + ' — type it';
-                    }
+                    if (r.error && r.error != 'no-speech' && r.error != 'aborted') { U.mic.className = 'jp-mic'; U.mic.textContent = 'Mic: ' + r.error + ' — type it'; return; }
+                    // Chrome ended the recognizer on silence; keep listening while there is time.
+                    let remaining = deadline - JPClock.now();
+                    if (remaining > 600) startListening(remaining); else finish(U.input.value);
                 });
             }
+            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: false })); }
             // The recognizer can't be paused, so stop it on pause and start a
             // fresh one for the remaining time on resume.
-            function onPauseAnswer() { if (listener) { listener.stop(); } }
+            function onPauseAnswer() { if (listener) { let l = listener; listener = null; l.stop(); } }
             function onResumeAnswer() {
                 if (done || !useSpeech) return;
                 let remaining = deadline - JPClock.now();
@@ -1797,21 +1892,21 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             JPClock.onPause(onPauseAnswer);
             JPClock.onResume(onResumeAnswer);
-            if (useSpeech) startListening(seconds * 1000);
+            if (useSpeech) { let early = earTake(); if (early) attach(early); else startListening(seconds * 1000); }
         });
         if (!alive(tok)) return { correct: false };
         clearTimer();
         U.mic.className = 'jp-mic';
         U.mic.textContent = '';
 
+        // Judge: the typed text, then every phrase heard (each with its alternatives), newest first.
         let candidates = [ ];
         if (got.typed) candidates.push(got.typed);
-        if (got.heard) {
-            for (let a of got.heard.alternatives || [ ]) candidates.push(a);
-            if (got.heard.text) candidates.push(got.heard.text);
-        }
+        for (let i = got.phrases.length - 1; i >= 0; i--) for (let a of got.phrases[i]) candidates.push(a);
+        if (!got.phrases.length && got.interim) candidates.push(got.interim);
+        let heardLast = got.phrases.length ? got.phrases[got.phrases.length - 1][0] : got.interim;
         let verdict = JPJudge.judgeAny(candidates, info.correct);
-        let said = got.typed || (got.heard && got.heard.text) || '';
+        let said = got.typed || (verdict.correct && verdict.text ? verdict.text : heardLast) || '';
         let correct = !!verdict.correct;
         if (correct) G.stats.correct++; else G.stats.wrong++;
         let rec = addResult({ kind: info.dd ? 'dd' : 'clue', num: info.num, round: G.round, category: info.category.name, value: info.value, amount: amount,
@@ -1875,7 +1970,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await hostSay(who == YOU ? 'You\'ve found the Daily Double! You have ' + money(G.scores[YOU]) + '. What will you wager?'
                                  : who + ', you\'ve found the Daily Double. You have ' + money(G.scores[who]) + '. What will you wager?');
         if (!alive(tok)) return;
-        await pause(500, tok);
+        await pause(300, tok);
         if (!alive(tok)) return;
 
         let wager;
@@ -1894,7 +1989,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                      '</div><div class="jp-clue-why">' + esc(d.why) + '</div>', { noUpper: true, category: info.category });
             await contestantSay(who, wager == G.scores[who] ? 'Let\'s make it a true Daily Double.' : 'I\'ll wager ' + wager);
             if (!alive(tok)) return;
-            await pause(800, tok);
+            await pause(500, tok);
             if (!alive(tok)) return;
         }
         setHeader(roundTitle(G.round), info.category.name, 'DD ' + money(wager));
@@ -1914,7 +2009,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await hostSay((res.correct ? 'That takes you to ' : 'That takes you down to ') + money(G.scores[YOU]) + '.');
         } else {
             lightPodium(who);
-            await sleep(clamp(gauss(1500, 400), 600, 2500), tok);
+            await sleep(clamp(gauss(1100, 300), 500, 1900), tok);
             if (!alive(tok)) return;
             // The archived outcome for this Daily Double (whoever found it in the
             // broadcast; the contestant in control here plays it out the same way).
@@ -1946,6 +2041,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     async function playFinal(tok) {
         let fj = fjInfo();
         G.round = 'FJ';
+        G.phase = 'other';
         if (usingNeural()) {
             JPNeural.clearPrefetch();
             JPNeural.prefetch([ JPReader.forNeural(fjIntroLine(fj), 'line'),
@@ -1964,7 +2060,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                  (fj.category.comments ? '<div class="jp-clue-medium">' + esc(fj.category.comments) + '</div>' : ''), { noUpper: true });
         await hostSay(fjIntroLine(fj));
         if (!alive(tok)) return;
-        await pause(1200, tok);
+        await pause(700, tok);
         if (!alive(tok)) return;
 
         // Contestants wager on the live standings, you included (JPWagers).
@@ -1989,7 +2085,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         } else {
             markOut(YOU, true);
             showPanel('<h1>Final Jeopardy! — ' + esc(fj.category.name) + '</h1><p>With ' + money(G.scores[YOU]) + ' you can\'t play Final Jeopardy!, but you can still play along. Click or press <span class="jp-key">' + buzzKeyName() + '</span>.</p>').classList.add('jp-clickthrough');
-            await pause(4000, tok);
+            await pause(2500, tok);
             if (!alive(tok)) return;
         }
         for (let n in players) podiumLine(n, 'wager locked in');
@@ -2019,13 +2115,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         clearTimer();
 
         // Reveal, lowest score first, you included.
-        let order = Object.keys(players).concat(youIn ? [ YOU ] : [ ]);
-        order.sort(function(a, b) { return G.scores[a] - G.scores[b]; });
+        let inFinal = Object.keys(players).concat(youIn ? [ YOU ] : [ ]);
+        let order = ranked(G.scores).filter(function(n) { return inFinal.indexOf(n) >= 0; }).reverse();
         showClue(fj.queryHtml.replace(/<a [^>]*>(.*?)<\/a>/g, '$1'), fjOpts);
         setSub('<span class="jp-note">The correct response:</span> <em class="correct_response">' + fj.correct + '</em>');
         await hostSay('The correct response: ' + fj.phrase.toLowerCase() + ' ' + JPReader.responseToSpeech(fj.correct) + '?');
         if (!alive(tok)) return;
-        await pause(1200, tok);
+        await pause(800, tok);
         if (!alive(tok)) return;
         for (let i = 0; i < order.length; i++) {
             let who = order[i];
@@ -2046,7 +2142,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             podiumLine(who, '<span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + (resp ? esc(resp) : '(nothing)') + '</span>');
             await hostSay((isYou ? 'You wrote: ' : heShe(who).charAt(0).toUpperCase() + heShe(who).slice(1) + ' wrote: ') + (resp ? JPReader.responseToSpeech(resp) : 'nothing.'));
             if (!alive(tok)) return;
-            await pause(900, tok);
+            await pause(600, tok);
             if (!alive(tok)) return;
             setSub('<span class="jp-who">' + esc(who) + ' wrote:</span> ' + (resp ? esc(resp) : '<i>(nothing)</i>') + ' &nbsp; <span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + (right ? 'Correct!' : 'Sorry, no.') + '</span> &nbsp; wager ' + money(wager) +
                    (why ? '<div class="jp-clue-why">' + esc(why) + '</div>' : ''));
@@ -2057,13 +2153,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let takes = (isYou ? 'That takes you ' : 'That takes ' + himHer(who) + ' ') + (right ? 'to ' : 'down to ') + money(G.scores[who]) + '.';
             await hostSay((wager ? 'And the wager: ' + money(wager) + '. ' : 'No wager. ') + takes);
             if (!alive(tok)) return;
-            await pause(why ? 2200 : 1200, tok);
+            await pause(why ? 1600 : 900, tok);
             if (!alive(tok)) return;
         }
         lightPodium(null);
         // The verdict.
-        let all = realNames().concat([ YOU ]);
-        all.sort(function(a, b) { return G.scores[b] - G.scores[a]; });
+        let all = ranked(G.scores);
         let top = all.filter(function(n) { return G.scores[n] == G.scores[all[0]]; });
         let line = top.length > 1 ? 'And we have a tie at ' + money(G.scores[all[0]]) + ' between ' + joinNatural(top.map(function(n) { return n == YOU ? 'you' : n; })) + '!'
                  : all[0] == YOU ? 'And that makes you our champion, with ' + money(G.scores[YOU]) + '! Congratulations.'
@@ -2135,8 +2230,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // inline: a compact version with a heading, for the wager screens.
     function standingsTable(inline) {
-        let names = realNames().concat([ YOU ]);
-        names.sort(function(a, b) { return G.scores[b] - G.scores[a]; });
+        let names = ranked(G.scores);
         let rows = names.map(function(n) {
             return '<tr' + (n == YOU ? ' class="jp-you"' : '') + '><td>' + esc(n) + '</td><td class="jp-num">' + money(G.scores[n]) + '</td></tr>';
         }).join('');
@@ -2149,8 +2243,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     function showFinalStandings() {
         let st = G.stats;
-        let names = realNames().concat([ YOU ]);
-        names.sort(function(a, b) { return G.scores[b] - G.scores[a]; });
+        let names = ranked(G.scores);
         let winner = names[0];
         setHeader('Final results', '', '');
         clearTimer();

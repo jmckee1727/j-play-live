@@ -180,6 +180,7 @@ var JPEar = (function() {
     // ---- utterance detection ----------------------------------------------
     // Energy over 32 ms frames against a noise floor that adapts to the room.
     const FRAME = 512;                                            // 32 ms at 16 kHz
+    const MIN_SPEECH = 8;                                         // frames of sound that make an utterance (256 ms)
     let noise = 0.004, level = 0;
     let pend = new Float32Array(FRAME), pendLen = 0;             // samples waiting to make a whole frame
     let zeroRun = 0;                                              // consecutive samples of exact digital silence
@@ -237,9 +238,11 @@ var JPEar = (function() {
                     this.push(frame);
                     if (e > thr * 0.7) { this.speechFrames++; this.silentFrames = 0; } else this.silentFrames++;
                     let secs = this.bufLen / RATE;
-                    // 550 ms of quiet ends the utterance; 12 s caps it.
-                    if ((this.silentFrames >= 17 && this.speechFrames >= 3) || secs > 12) this.flush(false);
-                    else if (this.silentFrames >= 25 && this.speechFrames < 3) { this.inSpeech = false; this.buf = [ ]; this.bufLen = 0; }   // a click, not speech
+                    // 550 ms of quiet ends the utterance; 12 s caps it. Fewer than
+                    // 8 frames (a quarter second) of sound is a click or a cough,
+                    // not a response: dropped, and the window stays open.
+                    if ((this.silentFrames >= 17 && this.speechFrames >= MIN_SPEECH) || secs > 12) this.flush(false);
+                    else if (this.silentFrames >= 25 && this.speechFrames < MIN_SPEECH) { this.inSpeech = false; this.buf = [ ]; this.bufLen = 0; log('noise, not speech (' + this.speechFrames + ' frames); ignored'); }
                 },
                 push: function(frame) { this.buf.push(new Float32Array(frame)); this.bufLen += frame.length; },
                 flush: function(final) {
@@ -290,7 +293,7 @@ var JPEar = (function() {
                 if (done || stopping) return;
                 stopping = true;
                 // Hear out what was being said -- unless one phrase was all that was wanted and it's in.
-                if (s.inSpeech && s.speechFrames >= 3 && !(opts.endOnFinal && gotContent)) s.flush(true);
+                if (s.inSpeech && s.speechFrames >= MIN_SPEECH && !(opts.endOnFinal && gotContent)) s.flush(true);
                 if (!pending) finish(); else setTimeout(finish, 4000);     // but don't wait forever for it
             };
             abortFn = function() {

@@ -16,6 +16,7 @@ zip -q -r "$OUT" \
     vendor/kokoro.web.js vendor/transformers.min.js vendor/ort-wasm-simd-threaded.jsep.mjs vendor/ort-wasm-simd-threaded.jsep.wasm \
     vendor/NOTICE.txt vendor/LICENSE-kokoro-js.txt vendor/LICENSE-transformers.txt vendor/LICENSE-phonemizer.txt vendor/LICENSE-onnxruntime.txt vendor/LICENSE-transformers-js.txt \
     sounds/README.txt \
+    fonts/BreeSerif-Regular.ttf fonts/Anton-Regular.ttf fonts/LICENSE-BreeSerif.txt fonts/LICENSE-Anton.txt \
     -x '*.DS_Store'
 ls -la "$OUT"
 echo "Upload $OUT at https://chrome.google.com/webstore/devconsole"

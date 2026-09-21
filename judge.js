@@ -186,8 +186,12 @@ var JPJudge = (function() {
     // response yet -- the player is still thinking, so the window stays open.
     const STEM_RE = /^(?:(?:what|who|where|when|which|how|why)(?:s|re)?(?:\s+(?:is|are|was|were|it|its))*\s*)+/;
     const FILLER = /^(?:is|are|was|were|it|its|the|a|an|um+|uh+|uhm+|er+|erm+|hm+|hmm+|mm+|ah+|oh+|ooh+|like|well|so|okay|ok|yeah|yes|no|let|lets|see|me|think|i|ill|say|go|with|maybe|probably|that|thats|this|wait|hold|on|and|or|but)$/;
+    // A recognizer's word for a noise ("explosion", "[silence]") with no question stem is nothing said either.
+    const NOISE = /^(silence|silent|explosion|boom|bang|noise|click|clicks|static|music|laughter|laughs|applause|thump|cough|coughs|sigh|sighs|beep|beeps|buzz|buzzing|rustling|breathing|thud|crash|ding|blank audio|inaudible|unintelligible)$/;
     function contentFree(text) {
-        let t = String(text || '').toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').replace(/'/g, '').replace(/\s+/g, ' ').trim();
+        let raw = String(text || '').replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*/g, ' ');
+        let t = raw.toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').replace(/'/g, '').replace(/\s+/g, ' ').trim();
+        if (NOISE.test(t)) return true;
         t = t.replace(STEM_RE, '');
         return t.split(' ').filter(Boolean).every(function(w) { return FILLER.test(w); });
     }

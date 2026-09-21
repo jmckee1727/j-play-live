@@ -124,8 +124,17 @@ function pcm16Base64ToFloat(b64) {
     return f;
 }
 
-// Whisper answers silence with stock phrases ("Thank you.", "you"); drop those.
-const HALLUCINATIONS = /^(thank you\.?|thanks\.?|you\.?|bye\.?|\.|\s*)$/i;
+// Whisper answers silence and noises with stock phrases ("Thank you.", "you")
+// and sound tags ("[BLANK_AUDIO]", "(explosion)", "*silence*"); those are
+// nothing said. A bare noise word with no question stem is treated the same.
+const HALLUCINATIONS = /^(thank you\.?|thanks\.?|you\.?|bye\.?|the end\.?|\.|\s*)$/i;
+const NOISE_WORD = /^(silence|silent|explosion|boom|bang|noise|click|clicks|static|music|laughter|laughs|applause|thump|cough|coughs|sigh|sighs|beep|beeps|buzz|buzzing|rustling|breathing|door|thud|crash|ding|blank audio|inaudible|unintelligible)[.!?]*$/i;
+function cleanTranscript(text) {
+    let t = String(text || '').replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*/g, ' ').replace(/\s+/g, ' ').trim();   // sound tags
+    if (HALLUCINATIONS.test(t)) return '';
+    if (NOISE_WORD.test(t)) return '';
+    return t;
+}
 
 export function earTranscribe(opts) {
     if (!asr) return Promise.resolve({ ok: false, error: 'ear not loaded' });
@@ -134,8 +143,7 @@ export function earTranscribe(opts) {
         let t0 = performance.now();
         if (audio.length < 1600) return { ok: true, text: '', ms: 0 };
         let out = await asr(audio, { max_new_tokens: 48, return_timestamps: false });
-        let text = String((out && out.text) || '').trim();
-        if (HALLUCINATIONS.test(text)) text = '';
+        let text = cleanTranscript((out && out.text) || '');
         return { ok: true, text: text, ms: Math.round(performance.now() - t0), seconds: audio.length / 16000 };
     });
     queue = job.catch(function() { });

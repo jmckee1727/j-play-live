@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "J-Play Live: play along on J! Archive",
   "short_name": "J-Play Live",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "description": "Play archived Jeopardy! games live on J! Archive: clues read aloud, ring in, answer by voice, race the original contestants.",
   "icons": {
     "16": "icons/16.png",
@@ -50,7 +50,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "sounds/*"
+        "sounds/*",
+        "fonts/*"
       ],
       "matches": [
         "https://*.j-archive.com/*"

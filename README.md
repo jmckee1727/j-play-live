@@ -91,14 +91,14 @@ when it is loaded.
   **Evan** or **Nathan** (English US, Enhanced) or **Alex**. Restart Chrome; the game picks the
   best installed voice automatically.
 * Start on **Easy** (contestants ring in about a second and a half after the lights; Medium is half a second, Hard 0.3 s, Champion 0.2 s — real contestants are in that range).
-* **Media clues** — clues built on a picture, video or audio file, which the archive rarely has — score for the contestants as on TV only if you choose so in Settings. By default they ring in and respond as broadcast, control of the board follows, but their money doesn't move (the game says "no change in score"); your own responses on those clues count either way.
+* **Media clues** — clues built on a picture, audio or video file. Each file is probed once when the clue comes up; what the archive has is shown with the clue (a picture stays up while the clue is read, audio plays with the reading, a video plays right after it), and what it lacks gets one note. When the media is missing, the contestants (who had it on TV) get **half credit** for their responses by default, right or wrong — or none, or full, under **Media clues** in Settings; your own responses always count in full. When the media is there, everyone scores as on TV.
 
 ## How to play
 
 | Key | Action |
 | --- | --- |
 | `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. |
-| `Enter` | Lock in a typed response or a wager (also moves on) |
+| `Enter` | Lock in a typed response or a wager (also moves on). A Daily Double wager can be spoken instead ("twelve hundred", "all of it"); a Final Jeopardy! wager is typed. Clicks outside the wager box confirm nothing. |
 | `Space` or a click during the Final Jeopardy! music | Ring in to respond: the music ducks, the mic opens, and your first phrase is locked in. (Typing works throughout; with the box empty, Space rings in.) |
 | `y` / `n` | Overrule the judge on your last response (until the next clue). The money, the rebound and control of the board all follow. |
 | **Rewind** (pause menu) | Every clue played so far, in order. Go back to the moment before any of them: that clue and everything after it are played again with the board, the money and control as they were; your responses from that point are cleared. |
@@ -140,11 +140,24 @@ are the archived ones. The category is shown across the top of every clue.
 | `stylecontent.css` | Original j-play styling for the review mode. |
 | `sounds/` | Optional sound files (see below). |
 
-## High scores
+## High scores and statistics
 
-Every finished game is recorded in this browser (your score, place, accuracy, the game) and listed
-under **High scores** on the setup screen and the final screen. It is local to this computer for
+Every finished game is recorded in this browser (your score, place, accuracy, Coryat score, the
+game) and listed under **High scores** on the setup screen and the final screen, with your win
+rate, average score, average and best Coryat. The **Coryat score** is your money from the regular
+clues alone: wrong responses count against you, a Daily Double counts at its face value when right
+and costs nothing when wrong, and Final Jeopardy! is left out — the usual measure for playing along
+at home. A result edited after the game ends (a Final Jeopardy! call overruled with `y`, or **Edit
+results** on the final screen) changes the saved game too. It is all local to this computer for
 now; sign-in and online play are on the list.
+
+## The look
+
+The clue screen and the board follow the broadcast: the clue in a Korinna-like serif (Bree Serif),
+white with a hard black shadow, in a narrow column of short lines sized to the screen; the board in
+a compressed grotesque (Anton), white categories and gold values on the show's blue with black
+gutters. Both fonts ship in `fonts/` (SIL Open Font License) and are declared at runtime from the
+extension's own URLs.
 
 ## Sounds
 

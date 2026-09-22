@@ -4,23 +4,33 @@
 <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.55;color:#222;background:#fff}h1{font-size:1.8em}h2{font-size:1.2em;margin-top:1.6em}a{color:#0645ad}</style>
 </head><body>
 <h1>Privacy Policy — J-Play Live</h1>
-<p><em>Last updated: September 21, 2026</em></p>
+<p><em>Last updated: September 22, 2026</em></p>
 <p>J-Play Live is a browser extension that lets you play along with archived game shows on the J! Archive website (j-archive.com). It runs only on j-archive.com pages: the game itself on game pages, and on the rest of the site only to mark the games you have already played.</p>
 <h2>What the extension collects</h2>
-<p>Nothing. The extension does not collect, store, or transmit any personal information, browsing history, or gameplay data. Your settings (difficulty, voice choice, player names and keys, and similar) and your results (the scores of games you finish, and which games you have played) are saved in your browser's local storage for j-archive.com and in the extension's own storage on your computer, and never leave it. They are used only to show you your high scores and statistics and to mark the games you have played on the archive's pages.</p>
+<p>Nothing, unless you create an account. Your settings (difficulty, voice choice, player names and keys, and similar) and your results (the scores of games you finish, and which games you have played) are saved in your browser's local storage for j-archive.com and in the extension's own storage on your computer. They are used to show you your high scores and statistics and to mark the games you have played on the archive's pages.</p>
+<p><strong>If you create an account (optional, for online play)</strong> the extension stores with the account, on the J-Play Live service (hosted on Supabase, in the United States):</p>
+<ul>
+<li>your email address and a password (the password is stored only as a hash by the authentication service; nothing is ever sent to the email address — it is only your sign-in name);</li>
+<li>the display name you choose, which other players and the leaderboard can see;</li>
+<li>your results: the score, Coryat score, finishing place and response counts of every game you finish, the archive game's id, and the id of every game you have played, so that matchmaking never gives you a game you have played and your played-game marks follow you between computers;</li>
+<li>for online games: the room, who played, and the ratings that follow (rating and average Coryat), which are public on the leaderboard together with your display name;</li>
+<li>during an online game, the messages that make the game work — when you rang in, what you typed or were heard to say, your picks and wagers — are sent to the other players in that game through the service's realtime channel and are not stored.</li>
+</ul>
+<p>The extension never sends the archive's pages or their contents anywhere: each player's own browser loads the page. There is no advertising, analytics or telemetry, and nothing is sold or shared with anyone else. <strong>Delete account</strong> in the extension removes the account and everything stored with it at once; you can also ask through the contact below.</p>
 <h2>Network activity</h2>
-<p>The extension makes network requests in exactly two situations:</p>
+<p>Apart from the account service above (used only when you sign in), the extension makes network requests in exactly two situations:</p>
 <ol>
 <li><strong>The studio voice.</strong> If you choose to download the studio voice, the extension downloads the open-source Kokoro speech model files from Hugging Face (huggingface.co and its content-delivery hosts) once and caches them in your browser. These requests are plain file downloads that carry no information about you. After the download, speech is generated entirely on your computer.</li>
 <li><strong>Speech recognition.</strong> If you choose to answer by voice, the game listens through your microphone after you ring in (and, if you keep "pick clues by voice" on, while you are choosing a clue, or while you wager on a Daily Double). By default the microphone stays open for the whole game so that the audio device does not start and stop between clues, but audio is only processed while the game is listening for you; the rest is discarded at once, and nothing is recorded or stored. You can set the microphone to open only while the game listens, or turn it off and type, in Settings. Two recognizers are offered. The <strong>studio ear</strong> downloads the open-source Whisper speech model from Hugging Face once (a plain file download, like the voice) and then transcribes your speech entirely on your computer; no audio leaves the machine. Until it is downloaded, or if you choose it instead, the extension uses <strong>Chrome's built-in recognizer</strong>, which sends microphone audio to Google's speech service while the game is listening; that is governed by Google's privacy policy, not by this extension. You can answer by typing instead, in which case no audio is captured.</li>
 </ol>
-<p>The extension does not contact any server of its own. There is no analytics, advertising, or telemetry.</p>
+<p>Signed out, the extension contacts no server of its own. Signed in, it talks to the J-Play Live service described above, and to nothing else. There is no analytics, advertising, or telemetry.</p>
 <h2>Permissions</h2>
 <ul>
 <li><strong>Access to j-archive.com pages:</strong> to add the game to game pages, and to mark the games you have played in the site's lists.</li>
 <li><strong>Storage:</strong> to keep your results on your computer.</li>
 <li><strong>Offscreen documents:</strong> to run the speech model in a hidden extension page.</li>
 <li><strong>huggingface.co / hf.co:</strong> to download the speech model at your request.</li>
+<li><strong>The J-Play Live service (Supabase):</strong> accounts and online play, only once you sign in.</li>
 </ul>
 <h2>Contact</h2>
 <p>Questions about this policy: use the developer contact on the extension's Chrome Web Store listing, or open an issue at <a href="https://github.com/jmckee1727/j-play-live/issues">https://github.com/jmckee1727/j-play-live/issues</a>.</p>

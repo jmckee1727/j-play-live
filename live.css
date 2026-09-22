@@ -355,3 +355,15 @@ table.jp-rewind td.jp-rw-scores { font-size: 0.85em; }
 .jp-podiums.jp-many .jp-podium .jp-pscore { font-size: 1.6em; min-width: 5em; padding: 2px 6px; }
 .jp-podiums.jp-many .jp-podium { padding: 22px 4px 6px; }
 .jp-podiums.jp-many { gap: 10px; }
+
+/* online play */
+.jp-online-box { background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(214, 159, 76, 0.5); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
+.jp-online-box .jp-online-row { margin: 8px 0 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.jp-online-box .jp-join-wrap { display: inline-flex; gap: 6px; align-items: center; }
+.jp-online-box .jp-note { margin-top: 4px; }
+.jp-form-col label { display: block; margin: 8px 0; }
+.jp-form-col label input { display: block; width: 22em; max-width: 100%; margin-top: 3px; font-size: 1.05em; padding: 4px 6px; }
+.jp-acct-err { min-height: 1.3em; margin: 4px 0; }
+.jp-podium.jp-gone { opacity: 0.45; }
+.jp-podium.jp-gone .jp-pname::after { content: " (away)"; font-size: 0.55em; letter-spacing: 0; text-transform: none; }
+.jp-online-status { font-size: 1.1em; }

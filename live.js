@@ -113,6 +113,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // Sleep that can be cut short with a click, the buzz key, or Enter.
     function pause(ms, tok) {
+        if (online()) return sleep(ms, tok);
         return new Promise(function(resolve) {
             let t = JPClock.setTimeout(done, ms);
             function done() { JPClock.clearTimeout(t); handlers.cont = null; resolve(alive(tok)); }
@@ -175,7 +176,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         applyDevices();
     }
     function saveSettings() {
-        try { localStorage.setItem('jpLiveSettings', JSON.stringify(S)); } catch (e) { }
+        try {
+            let out = S;
+            if (online() && G.online.overlay) {   // the room's timing and contestants, not yours: keep what you had
+                let saved = JSON.parse(localStorage.getItem('jpLiveSettings') || '{}');
+                out = Object.assign({ }, S); for (let k in G.online.overlay) { if (k in saved) out[k] = saved[k]; else delete out[k]; }
+            }
+            localStorage.setItem('jpLiveSettings', JSON.stringify(out));
+        } catch (e) { }
         applyDevices();
     }
     function applyDevices() {
@@ -898,13 +906,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function buzzIndex(e) {
         let hs = humans();
         for (let i = 0; i < hs.length; i++) {
-            let k = humanKey(i);
+            if (online() && hs[i] != G.online.me) continue;
+            let k = online() ? humanKey(0) : humanKey(i);
             if (k == 'Shift' ? e.key == 'Shift' : (e.key == k || (k == ' ' && e.code == 'Space') || (k.length == 1 && e.key.length == 1 && e.key.toLowerCase() == k.toLowerCase()))) return i;
         }
         return -1;
     }
     function isBuzz(e) { return buzzIndex(e) >= 0; }
-    function mouseHuman() { let hs = humans(); if (hs.length == 1) return hs[0]; let i = S.mousePlayer == null ? 0 : +S.mousePlayer; return (i >= 0 && i < hs.length) ? hs[i] : null; }
+    function mouseHuman() { if (online()) return G.online.me; let hs = humans(); if (hs.length == 1) return hs[0]; let i = S.mousePlayer == null ? 0 : +S.mousePlayer; return (i >= 0 && i < hs.length) ? hs[i] : null; }
 
     function onKey(e) {
         if (!liveActive) return;
@@ -945,11 +954,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // ------------------------------------------------------------- screens
 
     function buzzKeyName(who) {
+        if (online()) return keyName(humanKey(0));
         let i = who ? humans().indexOf(who) : 0;
         return keyName(humanKey(i < 0 ? 0 : i));
     }
     // "Space" for one player; "Space / A / L" for several (any of them moves the game on).
     function anyKeyHtml() {
+        if (online()) return '<span class="jp-key">' + buzzKeyName() + '</span>';
         return humans().map(function(hm) { return '<span class="jp-key">' + buzzKeyName(hm) + '</span>'; }).join(' / ');
     }
 
@@ -958,7 +969,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // contestants play as well.
     const RESERVED_KEYS = { 'Escape': 1, 'Enter': 1, 'Tab': 1, 'y': 1, 'n': 1, '+': 1, '-': 1, '=': 1, 'Meta': 1, 'Control': 1, 'Alt': 1, 'CapsLock': 1 };
     function playersSection() {
-        let count = clamp(+S.playerCount || 1, 1, 3), rows = '';
+        let count = online() ? 1 : clamp(+S.playerCount || 1, 1, 3), rows = '';
         for (let i = 0; i < count; i++) {
             let p = S.players[i] || { };
             rows += '<div class="jp-player-row" data-i="' + i + '">' +
@@ -968,12 +979,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 '</div>';
         }
         if (count > 1) rows += '<div class="jp-player-row jp-note"><label><input type="radio" name="jp-mouse" value="-1"' + (!(+S.mousePlayer >= 0 && +S.mousePlayer < count) ? ' checked' : '') + '> nobody rings in with the mouse</label></div>';
+        if (online()) return '<div class="jp-players">' + rows + '</div>';
         return '<select data-s="playerCount">' + [[1, 'Just me'], [2, 'Two of us'], [3, 'Three of us']].map(function(o) { return '<option value="' + o[0] + '"' + (count == o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
             '<div class="jp-players">' + rows + '</div>' +
             '<div style="margin-top:4px"><label><input type="checkbox" data-s="contestantsOn"' + (S.contestantsOn !== false ? ' checked' : '') + '>Play against the archive\'s contestants too' + (count == 1 ? '' : ' <span class="jp-note">(off: just the ' + (count == 2 ? 'two' : 'three') + ' of you)</span>') + '</label></div>' +
             (count > 1 ? '<div class="jp-note" style="margin-top:3px">Everyone shares this keyboard, screen and microphone. Ring in with your own key, then answer out loud (or type). Whoever answers right picks the next clue and plays the Daily Doubles they find; in Final Jeopardy! everyone wagers in turn and responds in turn. Each of you gets a saved game and stats under your name.</div>' : '');
     }
     let keyCapture = null;    // while a ring-in key button waits for a key press
+    let onlineSynced = false; // your saved games have gone up to the account once this page load
     function bindPlayers(panel) {
         let wrap = panel.querySelector('.jp-players-wrap');
         if (!wrap) return;
@@ -984,9 +997,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (G && !G.round && !G.recorded) { G.humans = humanNames(); G.scores = { }; for (let n of allPlayers()) G.scores[n] = 0; renderPodiums(); }
         };
         let pc = wrap.querySelector('[data-s="playerCount"]');
-        pc.addEventListener('change', function() { S.playerCount = clamp(+pc.value || 1, 1, 3); if (S.playerCount == 1) S.mousePlayer = 0; saveSettings(); refresh(); });
+        if (pc) pc.addEventListener('change', function() { S.playerCount = clamp(+pc.value || 1, 1, 3); if (S.playerCount == 1) S.mousePlayer = 0; saveSettings(); refresh(); });
         let co = wrap.querySelector('[data-s="contestantsOn"]');
-        co.addEventListener('change', function() { S.contestantsOn = co.checked; saveSettings(); refresh(); });
+        if (co) co.addEventListener('change', function() { S.contestantsOn = co.checked; saveSettings(); refresh(); });
         wrap.querySelectorAll('input[name="jp-mouse"]').forEach(function(r) { r.addEventListener('change', function() { if (r.checked) { S.mousePlayer = +r.value; saveSettings(); } }); });
         wrap.querySelectorAll('.jp-pname').forEach(function(inp) {
             let i = +inp.closest('.jp-player-row').dataset.i;
@@ -1037,17 +1050,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         for (let k in DIFFICULTY)
             dopts += '<option value="' + k + '"' + (S.difficulty == k ? ' selected' : '') + '>' + esc(DIFFICULTY[k].label) + '</option>';
         let sr = JPAudio.recognitionSupported();
+        let roomRows = online() && G.online.overlay;   // timing and contestants are the room's; only your own device settings show
         return '<table class="jp-form">' +
-            '<tr><td>Contestant speed</td><td><select data-s="difficulty">' + dopts + '</select>' +
+            (roomRows ? '' : '<tr><td>Contestant speed</td><td><select data-s="difficulty">' + dopts + '</select>' +
             ' <span class="jp-note">custom: median <input type="number" data-s="customMedian" min="60" max="4000" step="10" value="' + (+S.customMedian) + '" style="min-width:5em;width:5em"> ms, spread <select data-s="customSpread" style="min-width:6em">' +
               [[0.4, 'tight'], [0.65, 'normal'], [0.9, 'wide']].map(function(o) { return '<option value="' + o[0] + '"' + (Math.abs(+S.customSpread - o[0]) < 0.01 ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
-              '</select></span></td></tr>' +
-            '<tr><td>Media clues</td><td><select data-s="mediaCredit" style="max-width:100%">' +
+              '</select></span></td></tr>') +
+            (roomRows ? '' : '<tr><td>Media clues</td><td><select data-s="mediaCredit" style="max-width:100%">' +
               '<option value="half"' + (S.mediaCredit != 'none' && S.mediaCredit != 'full' ? ' selected' : '') + '>Contestants get half credit when the media is missing</option>' +
               '<option value="none"' + (S.mediaCredit == 'none' ? ' selected' : '') + '>Contestants get no credit when the media is missing</option>' +
               '<option value="full"' + (S.mediaCredit == 'full' ? ' selected' : '') + '>Score everyone as on TV</option></select>' +
-              '<div class="jp-note" style="margin-top:3px">Clues built on a picture, audio or video file. When the archive has it, it\'s shown or played and everyone scores as on TV; when it\'s missing, the contestants (who saw it) get the credit above, right or wrong, and your own responses count in full either way.</div></td></tr>' +
-            '<tr><td>Players</td><td><div class="jp-players-wrap">' + playersSection() + '</div></td></tr>' +
+              '<div class="jp-note" style="margin-top:3px">Clues built on a picture, audio or video file. When the archive has it, it\'s shown or played and everyone scores as on TV; when it\'s missing, the contestants (who saw it) get the credit above, right or wrong, and your own responses count in full either way.</div></td></tr>') +
+            (roomRows ? '<tr><td>Ring in with</td><td><div class="jp-players-wrap">' + playersSection() + '</div></td></tr>' : '<tr><td>Players</td><td><div class="jp-players-wrap">' + playersSection() + '</div></td></tr>') +
             '<tr><td>Microphone</td><td><select data-s="micMode" style="max-width:100%">' +
               '<option value="always"' + (S.micMode != 'toggle' && S.micMode != 'off' ? ' selected' : '') + (sr ? '' : ' disabled') + '>On for the whole game — answer out loud; steadiest sound' + (sr ? '' : ' (not supported here)') + '</option>' +
               '<option value="toggle"' + (S.micMode == 'toggle' ? ' selected' : '') + (sr ? '' : ' disabled') + '>On only while the game listens — answer out loud; the mic light goes off between turns</option>' +
@@ -1067,10 +1081,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<tr><td>Sound effects</td><td><label><input type="checkbox" data-s="sfx"' + (S.sfx ? ' checked' : '') + '>On (drop files into the extension\'s <code>sounds/</code> folder to replace the built-in tones)</label></td></tr>' +
             '<tr><td>Playback</td><td><select class="jp-out-device" style="max-width:100%"><option value="default">System default</option></select>' +
               '<span class="jp-out-device-note jp-note" style="margin-left:8px">the studio voice, effects and music (a system voice always follows the system default)</span></td></tr>' +
-            '<tr><td>Time to answer</td><td><input type="number" data-s="answerSeconds" min="2" max="15" value="' + (+S.answerSeconds) + '" style="min-width:5em;width:5em"> s after buzzing &nbsp; ' +
+            (roomRows ? '' : '<tr><td>Time to answer</td><td><input type="number" data-s="answerSeconds" min="2" max="15" value="' + (+S.answerSeconds) + '" style="min-width:5em;width:5em"> s after buzzing &nbsp; ' +
               'ring-in window <input type="number" data-s="buzzWindowSeconds" min="2" max="15" value="' + (+S.buzzWindowSeconds) + '" style="min-width:5em;width:5em"> s &nbsp; ' +
               'lockout <input type="number" data-s="lockoutMs" min="0" max="2000" step="50" value="' + (+S.lockoutMs) + '" style="min-width:5em;width:5em"> ms</td></tr>' +
-            '<tr><td>After a clue</td><td>move on after <input type="number" data-s="autoAdvanceMs" min="0" max="10000" step="100" value="' + (+S.autoAdvanceMs) + '" style="min-width:6em;width:6em"> ms if you don\'t click or press <span class="jp-key">' + buzzKeyName() + '</span> first</td></tr>' +
+            '<tr><td>After a clue</td><td>move on after <input type="number" data-s="autoAdvanceMs" min="0" max="10000" step="100" value="' + (+S.autoAdvanceMs) + '" style="min-width:6em;width:6em"> ms if you don\'t click or press <span class="jp-key">' + buzzKeyName() + '</span> first</td></tr>') +
             '</table>';
     }
 
@@ -1476,17 +1490,24 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             ? '<div class="jp-onboard"><b>New: a studio-quality host voice.</b> The host can now speak with a natural voice that runs entirely on your computer — free, no account, nothing sent anywhere. It\'s a one-time download (about 90–330 MB depending on your hardware). Click <b>Check my computer</b> under Host voice to see if yours can run it, then <b>Download</b>. The system voice keeps working either way. <button class="jp-btn jp-secondary jp-onboard-ok" style="padding:2px 10px;font-size:0.9em;margin-left:8px">Got it</button></div>'
             : '';
         let panel = showPanel(
-            '<h1>Play Live</h1>' + onboarding +
+            '<h1>Play Live</h1>' + onboarding + '<div class="jp-online-slot"></div>' +
             '<div class="jp-intro">' + setupIntro() + '</div>' +
             '<p class="jp-note">During play: click / <span class="jp-key">' + buzzKeyName() + '</span> ring in, and move on when the game is waiting · <span class="jp-key">Enter</span> submit a typed response or wager · <span class="jp-key">y</span>/<span class="jp-key">n</span> overrule a judgment · <span class="jp-key">Esc</span> or the Pause button freezes everything</p>' +
             '<h2>Settings</h2>' + settingsForm() +
             '<div class="jp-setup-actions"><button class="jp-btn jp-start">Start the game</button> <button class="jp-btn jp-secondary jp-scores">High scores</button> <button class="jp-btn jp-secondary jp-cancel">Back to the page</button></div>'
         );
         bindSettingsForm(panel);
+        let slot = panel.querySelector('.jp-online-slot');
+        if (slot && onlineAvailable()) JPOnline.init().then(function() {
+            if (!slot.isConnected) return;
+            slot.innerHTML = accountBox();
+            bindAccountBox(panel, showSetup);
+            if (JPOnline.signedIn && !onlineSynced) { onlineSynced = true; syncOnline(); }
+        });
         if (typeof JPPlayed != 'undefined') JPPlayed.get(gameId(), function(rec) {
             if (!rec || !panel.isConnected || panel.querySelector('.jp-played-before')) return;
-            let d = new Date(rec.d), p = h('p', 'jp-note jp-played-before');
-            p.innerHTML = '\u2713 You played this game on ' + esc(d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })) + (typeof rec.s == 'number' ? ' — ' + money(rec.s) + (rec.w ? ', and won' : '') : '') + (rec.n > 1 ? ' (' + rec.n + ' times in all)' : '') + '. ' +
+            let d = rec.d ? new Date(rec.d) : null, p = h('p', 'jp-note jp-played-before');
+            p.innerHTML = '\u2713 ' + (d && !isNaN(d) ? 'You played this game on ' + esc(d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })) + (typeof rec.s == 'number' ? ' — ' + money(rec.s) + (rec.w ? ', and won' : '') : '') + (rec.n > 1 ? ' (' + rec.n + ' times in all)' : '') : 'You\'ve played this game before (so says your account)') + '. ' +
                           (nextGameLink() ? 'The <a href="' + esc(nextGameLink().href.replace(/#.*$/, '')) + '#jplive-next" class="jp-link">next game</a> is a click away.' : '');
             panel.querySelector('h1').insertAdjacentElement('afterend', p);
         });
@@ -1509,7 +1530,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             closePauseMenu();
             return;
         }
-        JPClock.pause();
+        if (!online()) JPClock.pause();
         pauseEl = h('div', 'jp-dialog');
         U.root.appendChild(pauseEl);
         swapPauseContents(withSettings ? 'settings' : 'pause');
@@ -1519,17 +1540,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (mode === true) mode = 'settings';
         let inner = h('div', 'jp-panel jp-wide' + (mode == 'pause' ? ' jp-pause-plain' : ''));
         let title = mode == 'settings' ? 'Settings' : mode == 'results' ? 'Edit results' : mode == 'rewind' ? 'Rewind' : 'Paused';
-        let body = mode == 'settings' ? settingsForm() + '<p class="jp-note">The game is paused. Changes apply from the next clue.</p>'
+        let body = mode == 'settings' ? settingsForm() + '<p class="jp-note">' + (online() ? 'The game goes on meanwhile. Changes apply from the next clue.' : 'The game is paused. Changes apply from the next clue.') + '</p>'
                  : mode == 'results' ? resultsForm()
                  : mode == 'rewind' ? rewindForm()
+                 : online() ? '<p class="jp-note">An online game can\'t be paused — it goes on while this is open.</p>'
                  : '<p class="jp-note">The game is frozen where it is.</p>';
-        inner.innerHTML = '<h1>' + title + '</h1>' + body +
-            '<div class="jp-menu-row"><button class="jp-btn jp-resume">Resume</button>' +
+        inner.innerHTML = '<h1>' + (online() && mode == 'pause' ? 'Menu' : title) + '</h1>' + body +
+            '<div class="jp-menu-row"><button class="jp-btn jp-resume">' + (online() ? 'Back to the game' : 'Resume') + '</button>' +
             (mode == 'settings' ? '' : '<button class="jp-btn jp-secondary jp-show-settings">Settings</button>') +
-            (mode == 'results' ? '' : '<button class="jp-btn jp-secondary jp-show-results">Edit results</button>') +
-            (mode == 'rewind' ? '' : '<button class="jp-btn jp-secondary jp-show-rewind">Rewind</button>') +
-            '<button class="jp-btn jp-secondary jp-restart">Restart game</button>' +
-            '<button class="jp-btn jp-secondary jp-quit">Quit to page</button></div>';
+            (mode == 'results' || online() ? '' : '<button class="jp-btn jp-secondary jp-show-results">Edit results</button>') +
+            (mode == 'rewind' || online() ? '' : '<button class="jp-btn jp-secondary jp-show-rewind">Rewind</button>') +
+            (online() ? '' : '<button class="jp-btn jp-secondary jp-restart">Restart game</button>') +
+            '<button class="jp-btn jp-secondary jp-quit">' + (online() ? 'Leave the game' : 'Quit to page') + '</button></div>';
         pauseEl.innerHTML = '';
         pauseEl.appendChild(inner);
         pauseEl.scrollTop = 0;
@@ -1543,7 +1565,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (sr) sr.onclick = function() { swapPauseContents('results'); };
         let sw = inner.querySelector('.jp-show-rewind');
         if (sw) sw.onclick = function() { swapPauseContents('rewind'); };
-        inner.querySelector('.jp-restart').onclick = function() { closePauseMenu(); runToken++; JPAudio.stopSpeaking(); JPAudio.stopLoop(); showSetup(); };
+        let rs = inner.querySelector('.jp-restart');
+        if (rs) rs.onclick = function() { closePauseMenu(); runToken++; JPAudio.stopSpeaking(); JPAudio.stopLoop(); showSetup(); };
         inner.querySelector('.jp-quit').onclick = function() { closePauseMenu(); quitLive(); };
         // Focus Resume for the keyboard, without scrolling a tall panel (Settings) down to it.
         setTimeout(function() { let b = inner.querySelector('.jp-resume'); if (b) b.focus({ preventScroll: true }); if (pauseEl) pauseEl.scrollTop = 0; }, 0);
@@ -1642,6 +1665,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     function quitLive() {
         runToken++;
+        if (online()) {
+            if (!G.recorded && !G.online.dead) { try { if (hostHere()) JPOnline.abandonRoom(G.online.room.id); } catch (e) { } }
+            if (typeof JPOnline !== 'undefined') JPOnline.disconnect();
+            G.online = null;
+        }
         liveActive = false;
         handlers = { buzz: null, override: null, cont: null, pick: null };
         JPAudio.stopSpeaking();
@@ -1720,9 +1748,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     async function startGame() {
         runToken++;
         let tok = runToken;
-        saveSettings();
+        if (!online()) saveSettings();
         setupVoices();
-        G.humans = humanNames();
+        G.humans = online() ? G.online.names : humanNames();
         // If the studio voice is chosen and still loading, give it a moment (it's usually seconds).
         let earLoading = function() { return earAvailableHere() && S.earEngine != 'chrome' && JPEar.state.loading; };
         if ((S.voiceEngine == 'neural' && neuralAvailableHere() && JPNeural.state.loading) || earLoading()) {
@@ -1772,6 +1800,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await playFinal(tok);
             if (!alive(tok)) return;
         }
+        if (online()) { await finishOnline(tok); if (!alive(tok)) return; }
         showFinalStandings();
     }
 
@@ -1914,11 +1943,23 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (!alive(tok)) return;
                 await sleep(250, tok);
                 if (!alive(tok)) return;
+            } else if (isHuman(G.control) && online() && !isMe(G.control)) {
+                renderBoard(round, false);
+                setHint('<b>' + esc(G.control) + '</b> has control and is picking…');
+                let ev = await fromPlayerOrForce('pick', G.control, function(p) { return remaining.indexOf(p.num) >= 0; }, 30000, { num: remaining[0], round: round });
+                if (!alive(tok)) return;
+                if (!ev) { onlineLost(); return; }
+                num = ev.num;
+                let cell = boardCell(num);
+                if (cell) cell.classList.add('jp-picking');
+                await sleep(400, tok);
+                if (!alive(tok)) return;
             } else if (isHuman(G.control)) {
                 setHint('<b>' + (G.control == YOU ? 'You have' : esc(G.control) + ', you have') + ' control.</b> Click a clue on the board.');
                 renderBoard(round, true);
                 num = await userPick(tok);
                 if (!alive(tok)) return;
+                if (online()) JPOnline.send('pick', { num: num, round: round });
             } else {
                 num = remaining[0]; // broadcast order
                 renderBoard(round, false);
@@ -1936,6 +1977,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await playClue(num, tok);
             if (!alive(tok)) return;
             recordTrajectory(num);
+            if (hostHere()) JPOnline.send('scores', { num: num, scores: G.scores });
         }
 
         G.phase = 'other';
@@ -2170,6 +2212,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.pendingControl = false;
         G.played[num] = true;
         G.stats.clues++;
+        if (online()) G.online.attempt = 0;
         handlers.override = null;
         clearPodiumLines();
         clearOuts();
@@ -2204,10 +2247,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await playClueVideo(tok);                       // a clue's video plays after the reading (audio played with it)
         if (!alive(tok)) { handlers.buzz = null; return; }
 
-        // Lights on.
+        // Lights on (online, the race lights them, once everyone has heard the clue).
         armed = true;
-        setLit(true);
-        JPAudio.play('lights');
+        if (!online()) { setLit(true); JPAudio.play('lights'); }
         let out = { };                                    // humans who've missed this clue
         let userOut = function() { return humans().every(function(hm) { return out[hm]; }); };
         let seqIdx = 0;
@@ -2249,9 +2291,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                         await revealCorrect(info, tok, true);
                         resolved = true;
                     } else {
-                        setLit(true);
+                        if (!online()) { setLit(true); JPAudio.play('lights'); }
                         lightPodium(null);
-                        JPAudio.play('lights');
                         setHint(userOut() ? 'Rebound — the others can ring in now.' : 'Rebound — ' + ringInHint(out) + ' to ring in.');
                     }
                 }
@@ -2291,9 +2332,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                         await revealCorrect(info, tok, true);
                         resolved = true;
                     } else {
-                        setLit(true);
+                        if (!online()) { setLit(true); JPAudio.play('lights'); }
                         lightPodium(null);
-                        JPAudio.play('lights');
                         setHint(userOut() ? 'Rebound.' : 'Rebound — ' + ringInHint(out) + ' to ring in.');
                     }
                 }
@@ -2327,6 +2367,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // Wait for the first of: the user's buzz, the next archived contestant's
     // simulated buzz, or the ring-in window closing.
     function race(tok, contestant, windowMs, userAllowed, getLock, setLock, mult) {
+        if (online()) return raceOnline(tok, contestant, windowMs, userAllowed, getLock, setLock, mult);
         return new Promise(function(resolve) {
             let done = false;
             let timers = [ ];
@@ -2355,6 +2396,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function hstat(who, key) { if (!G.hstats) G.hstats = { }; let h = G.hstats[who] || (G.hstats[who] = { }); h[key] = (h[key] || 0) + 1; }
     // "click or press Space" (one player) / "Alice: A, Bob: L" (several); skip: humans who are out.
     function ringInHint(skip) {
+        if (online()) return 'click or press <span class="jp-key">' + buzzKeyName() + '</span>';
         let hs = humans().filter(function(hm) { return !(skip && skip[hm]); });
         if (hs.length == 1 && humans().length == 1) return 'click or press <span class="jp-key">' + buzzKeyName(hs[0]) + '</span>';
         return hs.map(function(hm) { return esc(hm) + ' <span class="jp-key">' + buzzKeyName(hm) + '</span>' + (hm == mouseHuman() ? ' or click' : ''); }).join(', ');
@@ -2376,7 +2418,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         setHint(lead + (useSpeech ? 'Say your response (or type it and press <span class="jp-key">Enter</span>).' : 'Type your response and press <span class="jp-key">Enter</span>.'));
         setSub('<span class="jp-who">' + esc(who) + ':</span> …');
 
-        let got = await new Promise(function(resolve) {
+        let collect = function() { return new Promise(function(resolve) {
             let done = false, listener = null, interim = '', phrases = [ ];   // phrases: the finished phrase heard, with its alternatives
             let stems = [ ];                                                  // "what is…", "um": heard, but no response yet
             let deadline = JPClock.now() + seconds * 1000;
@@ -2440,7 +2482,21 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             JPClock.onPause(onPauseAnswer);
             JPClock.onResume(onResumeAnswer);
             if (useSpeech) startListening(seconds * 1000);
-        });
+        }); };
+        let got;
+        if (online() && !isMe(who)) {
+            // Someone else's response: it arrives as what they typed or were heard to say, and every client judges it the same way.
+            showAnswerStrip(false);
+            setHint('<b>' + esc(who) + '</b> is responding…');
+            let attempt = G.online.attempt;
+            let ev = await fromPlayerOrForce('response', who, function(p) { return p.num == info.num && p.attempt == attempt; }, seconds * 1000 + 6000, { num: info.num, attempt: attempt, typed: '', phrases: [ ], interim: '' });
+            if (!alive(tok)) return { correct: false };
+            if (!ev) { onlineLost(); return { correct: false }; }
+            got = { typed: String(ev.typed || ''), phrases: Array.isArray(ev.phrases) ? ev.phrases : [ ], interim: String(ev.interim || '') };
+        } else {
+            got = await collect();
+            if (online() && alive(tok)) JPOnline.send('response', { num: info.num, attempt: G.online.attempt, typed: got.typed, phrases: got.phrases, interim: got.interim });
+        }
         if (!alive(tok)) return { correct: false };
         clearTimer();
         U.mic.className = 'jp-mic';
@@ -2471,13 +2527,16 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         JPAudio.play(correct ? 'right' : 'wrong');
         let speakP = say(correct ? pick(HOST_RIGHT) : pick(HOST_WRONG), tok);
         showAnswerStrip(false);
-        setHint('Misjudged? <span class="jp-key">y</span> = ' + (who == YOU ? 'I was' : esc(who) + ' was') + ' right, <span class="jp-key">n</span> = wrong (until the next clue; later, Edit results in the pause menu).');
-        // The y/n override stays available until the next clue starts; it
-        // corrects the money (control of the board is not revisited).
-        handlers.override = function(isRight) {
-            setOutcome(rec, isRight ? 'right' : 'wrong');
-            show();
-        };
+        if (online()) setHint('');
+        else {
+            setHint('Misjudged? <span class="jp-key">y</span> = ' + (who == YOU ? 'I was' : esc(who) + ' was') + ' right, <span class="jp-key">n</span> = wrong (until the next clue; later, Edit results in the pause menu).');
+            // The y/n override stays available until the next clue starts; it
+            // corrects the money (control of the board is not revisited).
+            handlers.override = function(isRight) {
+                setOutcome(rec, isRight ? 'right' : 'wrong');
+                show();
+            };
+        }
         await speakP;
         return { correct: rec.outcome == 'right', said: said, rec: rec };
     }
@@ -2554,11 +2613,19 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (!alive(tok)) return;
 
         let wager;
-        if (isHuman(who)) {
+        if (isHuman(who) && online() && !isMe(who)) {
+            let max = Math.max(G.scores[who], maxVal);
+            showPanel('<h1>Daily Double — ' + esc(info.category.name) + '</h1><p><b>' + esc(who) + '</b> is wagering…</p>' + standingsTable(true));
+            let ev = await fromPlayerOrForce('wager', who, function(p) { return p.num == info.num; }, 45000, { num: info.num, amount: Math.min(max, 1000) });
+            if (!alive(tok)) return;
+            if (!ev) { onlineLost(); return; }
+            wager = clamp(Math.round(+ev.amount) || 5, 5, max);
+        } else if (isHuman(who)) {
             let max = Math.max(G.scores[who], maxVal);
             wager = await promptWager(5, max, 'Daily Double — ' + info.category.name,
                 (who == YOU ? 'You have ' : esc(who) + ', you have ') + money(G.scores[who]) + '. You may wager up to ' + money(max) + '.' + standingsTable(true), { voice: true });
             if (!alive(tok)) return;
+            if (online()) JPOnline.send('wager', { num: info.num, amount: wager });
         } else {
             let max = Math.max(G.scores[who], maxVal);
             let others = allPlayers().filter(function(n) { return n != who; }).map(function(n) { return G.scores[n]; });
@@ -2662,10 +2729,26 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             } else
                 markOut(n, true);
         }
-        // The humans wager in turn (a table-mate looks away while the others type).
+        // The humans wager in turn (a table-mate looks away while the others type); online, everyone at once.
         let hIn = humans().filter(function(hm) { return G.scores[hm] > 0; });
         let hWager = { }, hAnswer = { };
-        for (let hm of hIn) {
+        if (online()) {
+            let me = G.online.me;
+            if (hIn.indexOf(me) >= 0) {
+                hWager[me] = await promptWager(0, G.scores[me], 'Final Jeopardy! — ' + fj.category.name, 'You have ' + money(G.scores[me]) + '. How much will you wager?' + standingsTable(true));
+                if (!alive(tok)) return;
+                JPOnline.send('fjwager', { amount: hWager[me] });
+                podiumLine(me, 'wager locked in');
+            }
+            for (let hm of hIn) if (hm != me) {
+                showPanel('<h1>Final Jeopardy! — ' + esc(fj.category.name) + '</h1><p>Waiting for <b>' + esc(hm) + '</b> to wager…</p>' + standingsTable(true));
+                let ev = await fromPlayerOrForce('fjwager', hm, null, 75000, { amount: 0 });
+                if (!alive(tok)) return;
+                if (!ev) { onlineLost(); return; }
+                hWager[hm] = clamp(Math.round(+ev.amount) || 0, 0, G.scores[hm]);
+                podiumLine(hm, 'wager locked in');
+            }
+        } else for (let hm of hIn) {
             hWager[hm] = await promptWager(0, G.scores[hm], 'Final Jeopardy! — ' + fj.category.name,
                 (hm == YOU ? 'You have ' : '<b>' + esc(hm) + '</b>, you have ') + money(G.scores[hm]) + '. How much will you wager?' + (humans().length > 1 ? ' <span class="jp-note">(the others look away)</span>' : '') + standingsTable(true));
             if (!alive(tok)) return;
@@ -2692,7 +2775,25 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (!alive(tok)) return;
 
         JPAudio.startLoop('think');
-        if (hIn.length == 1) {
+        if (online()) {
+            // Everyone responds at once, on their own machine; the responses come over the channel and are judged alike everywhere.
+            let me = G.online.me;
+            if (hIn.indexOf(me) >= 0) {
+                let a = await finalAnswer(fj, S.fjSeconds, tok, me);
+                if (!alive(tok)) return;
+                JPOnline.send('fjanswer', { got: a.got });
+                hAnswer[me] = a;
+            } else { setTimer(S.fjSeconds, 'green'); setHint('The others are writing their responses.'); await sleep(S.fjSeconds * 1000, tok); if (!alive(tok)) return; }
+            JPAudio.stopLoop();
+            for (let hm of hIn) if (hm != me) {
+                setHint('Waiting for <b>' + esc(hm) + '</b>…');
+                let ev = await fromPlayerOrForce('fjanswer', hm, null, 25000, { got: { typed: '', phrases: [ ], interim: '' } });
+                if (!alive(tok)) return;
+                if (!ev) { onlineLost(); return; }
+                hAnswer[hm] = judgeFinal(fj, ev.got || { });
+                podiumLine(hm, 'response locked in');
+            }
+        } else if (hIn.length == 1) {
             hAnswer[hIn[0]] = await finalAnswer(fj, S.fjSeconds, tok, hIn[0]);
             if (!alive(tok)) return;
         } else if (hIn.length > 1) {
@@ -2752,8 +2853,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (isYou) {
                 let fjRec = addResult({ kind: 'fj', round: 'FJ', category: fj.category.name, value: 0, amount: wager, who: who, said: resp, correct: JPJudge.stripHtml(fj.correct), outcome: right ? 'right' : 'wrong' });
                 // The judge can be overruled here too (y/n), now or from the final screen; the standings and the saved game follow.
-                setHint('Misjudged? <span class="jp-key">y</span> = ' + (who == YOU ? 'I was' : esc(who) + ' was') + ' right, <span class="jp-key">n</span> = wrong (also later: Edit results).');
-                handlers.override = function(isRight) {
+                if (!online()) setHint('Misjudged? <span class="jp-key">y</span> = ' + (who == YOU ? 'I was' : esc(who) + ' was') + ' right, <span class="jp-key">n</span> = wrong (also later: Edit results).');
+                if (!online()) handlers.override = function(isRight) {
                     setOutcome(fjRec, isRight ? 'right' : 'wrong');
                     let ok = fjRec.outcome == 'right';
                     podiumLine(who, '<span class="' + (ok ? 'jp-correct' : 'jp-incorrect') + '">' + (resp ? esc(resp) : '(nothing)') + '</span>');
@@ -2870,11 +2971,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             JPClock.onPause(onPauseFJ);
             JPClock.onResume(onResumeFJ);
         });
-        if (!alive(tok)) return { said: '', correct: false };
+        if (!alive(tok)) return { said: '', correct: false, got: got };
         JPAudio.duckLoop(false);
         showAnswerStrip(false);
-
-        // Judge: the typed text, then the phrase heard (with its alternatives).
+        let res = judgeFinal(fj, got);
+        G.stats.answered++;
+        if (res.correct) G.stats.correct++; else G.stats.wrong++;
+        podiumLine(who, 'response locked in');
+        return res;
+    }
+    // Judge a Final Jeopardy! response: the typed text, then the phrase heard (with its alternatives).
+    function judgeFinal(fj, got) {
+        got = { typed: String(got.typed || ''), phrases: Array.isArray(got.phrases) ? got.phrases : [ ], interim: String(got.interim || '') };
         let candidates = [ ];
         if (got.typed) candidates.push(got.typed);
         for (let i = got.phrases.length - 1; i >= 0; i--) for (let a of got.phrases[i]) candidates.push(a);
@@ -2882,10 +2990,413 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let heardLast = got.phrases.length ? got.phrases[got.phrases.length - 1][0] : got.interim;
         let verdict = JPJudge.judgeAny(candidates, fj.correct);
         let said = got.typed || (verdict.correct && verdict.text ? verdict.text : heardLast) || '';
-        G.stats.answered++;
-        if (verdict.correct) G.stats.correct++; else G.stats.wrong++;
-        podiumLine(who, 'response locked in');
-        return { said: said, correct: !!verdict.correct };
+        return { said: said, correct: !!verdict.correct, got: got };
+    }
+
+    // ================================================================ online play
+    // Two or three people in different places play the same archive game.
+    // Every client runs the same game script; only the inputs that decide the
+    // game travel over the room's channel (who rang in first, what they said,
+    // the pick, the wagers), and the room's host arbitrates the buzzer race and
+    // speaks for anyone who has gone quiet. The service writes results and
+    // ratings when the host reports the finished game. Nothing from the archive
+    // page itself is sent anywhere: each player's browser has the page.
+    const ONLINE_MATCH_SETTINGS = { contestantsOn: false, answerSeconds: 8, buzzWindowSeconds: 6, lockoutMs: 250, ddAnswerSeconds: 10, fjSeconds: 30, autoAdvanceMs: 1500, mediaCredit: 'half' };
+    const ROOM_SETTING_KEYS = [ 'contestantsOn', 'difficulty', 'customMedian', 'customSpread', 'answerSeconds', 'buzzWindowSeconds', 'lockoutMs', 'ddAnswerSeconds', 'fjSeconds', 'mediaCredit', 'autoAdvanceMs' ];
+    function online() { return !!(G && G.online); }
+    function hostHere() { return online() && G.online.host; }
+    function isMe(who) { return online() ? who == G.online.me : isHuman(who); }
+    function onlineIdOf(who) { return online() ? (G.online.byName[who] || null) : null; }
+    function onlineNameOf(uid) { return online() ? (G.online.byId[uid] || null) : null; }
+    function onlineAvailable() { return typeof JPOnline !== 'undefined' && JPOnline.available() && !!(window.chrome && chrome.storage); }
+    function roomSettingsFromS() { let o = { }; for (let k of ROOM_SETTING_KEYS) o[k] = S[k]; return o; }
+    // To the room's game page; already on it, straight into the room (a hash change alone reloads nothing).
+    function goToRoom(game, roomId) {
+        if (+game == +gameId() && document.getElementById('live_btn')) { JPOnline.disconnect(); onlineLanding(roomId); }
+        else location.href = 'showgame.php?game_id=' + game + '#jplive-room=' + roomId;
+    }
+    function modeLabel(mode) { return mode == 'ranked' ? 'Ranked match' : mode == 'unrated' ? 'Unrated match' : 'Custom lobby'; }
+
+    // A message of `type` from `who` about this moment, or the host's word for
+    // a player who has gone quiet. Followers wait longer than the host does,
+    // since the host's forced message is what ends their wait; null means the
+    // host is gone too.
+    async function fromPlayerOrForce(type, who, pred, timeoutMs, forcedData) {
+        let id = onlineIdOf(who), hostId = G.online.hostId;
+        let match = function(p) { return (p.from == id || (p.forced && p.from == hostId && p.who == who)) && (!pred || pred(p)); };
+        let wait = hostHere() ? (JPOnline.isPresent(id) ? timeoutMs : 1500) : timeoutMs + 12000;
+        let ev = await JPOnline.waitFor(type, match, wait);
+        if (ev) return ev;
+        if (hostHere()) { let p = Object.assign({ forced: true, who: who }, forcedData || { }); JPOnline.send(type, p); return Object.assign({ from: hostId }, p); }
+        return null;
+    }
+    // The host's connection is gone (or ours): the game can't go on.
+    function onlineLost(why) {
+        if (!online() || G.online.dead) return;
+        G.online.dead = true;
+        runToken++;
+        JPAudio.stopSpeaking(); JPAudio.stopLoop();
+        if (!G.recorded) { try { JPOnline.abandonRoom(G.online.room.id); } catch (e) { } }
+        clearTimer(); showAnswerStrip(false);
+        let panel = showPanel('<h1>Connection lost</h1><p>' + esc(why || 'The host of this game dropped off (or the connection did), so the game is over. Nothing is scored.') + '</p>' +
+            '<p><button class="jp-btn jp-online-again">Play online again</button> <button class="jp-btn jp-secondary jp-cancel">Back to the page</button></p>');
+        panel.querySelector('.jp-online-again').onclick = function() { JPOnline.disconnect(); G.online = null; loadSettings(); G.humans = humanNames(); G.scores = { }; for (let n of allPlayers()) G.scores[n] = 0; renderPodiums(); showSetup(); };
+        panel.querySelector('.jp-cancel').onclick = function() { quitLive(); };
+        setHint('');
+    }
+    function onlinePresence(present) {
+        if (!online()) return;
+        let hostId = G.online.hostId;
+        if (!hostHere() && !present[hostId] && G.round && !G.recorded) {
+            if (!G.online.hostGoneAt) G.online.hostGoneAt = Date.now();
+            setTimeout(function() { if (online() && G.online.hostGoneAt && !JPOnline.isPresent(hostId)) onlineLost(); }, 12000);
+        } else G.online.hostGoneAt = null;
+        for (let p of G.online.players) {
+            let nm = G.online.byId[p.user_id];
+            let gone = !present[p.user_id];
+            if (gone != !!G.online.gone[nm]) { G.online.gone[nm] = gone; let el = podium(nm); if (el) el.classList.toggle('jp-gone', gone); }
+        }
+    }
+
+    // ---- the buzzer race, online: lights for everyone at one moment ----------------
+    // Everyone reads the clue with their own voice, so the lights wait until every
+    // client is done (ready), then the host names the moment (in its clock; the
+    // clients synced theirs to it when they joined). Buzzes carry the offset from
+    // that moment; the host takes the smallest one that arrives within a short
+    // grace, against the archived contestants' reaction times when they play too.
+    async function onlineLights(num, attempt, tok) {
+        JPOnline.send('ready', { num: num, attempt: attempt });
+        let at;
+        if (hostHere()) {
+            let need = G.online.players.map(function(p) { return p.user_id; }).filter(function(id) { return id != G.online.myId && JPOnline.isPresent(id); });
+            let deadline = Date.now() + 20000;
+            while (need.length && Date.now() < deadline && alive(tok)) {
+                let ev = await JPOnline.waitFor('ready', function(p) { return p.num == num && p.attempt == attempt && need.indexOf(p.from) >= 0; }, deadline - Date.now());
+                if (!ev) break;
+                need.splice(need.indexOf(ev.from), 1);
+                need = need.filter(function(id) { return JPOnline.isPresent(id); });
+            }
+            if (!alive(tok)) return null;
+            at = JPOnline.hostNow() + 500;
+            JPOnline.send('lights', { num: num, attempt: attempt, at: at });
+        } else {
+            setHint('Waiting for the others…');
+            let ev = await JPOnline.waitFor('lights', function(p) { return p.num == num && p.attempt == attempt; }, 75000);
+            if (!alive(tok)) return null;
+            if (!ev) { onlineLost(); return null; }
+            at = ev.at;
+        }
+        let wait = at - JPOnline.hostNow();
+        if (wait > 0) await new Promise(function(r) { setTimeout(r, wait); });
+        return alive(tok) ? at : null;
+    }
+    async function raceOnline(tok, contestant, windowMs, userAllowed, getLock, setLock, mult) {
+        let num = G.current.num, attempt = ++G.online.attempt;
+        let at = await onlineLights(num, attempt, tok);
+        if (at == null) return { type: 'timeout', lost: true };
+        setLit(true); JPAudio.play('lights');
+        setTimer(S.buzzWindowSeconds, 'green');
+        setHint(hostHere() || true ? 'Ring in: ' + ringInHint() + '.' : '');
+        let me = G.online.me;
+        return new Promise(function(resolve) {
+            let done = false, timers = [ ], offs = [ ], cands = [ ], scheduled = false;
+            function finish(ev) { if (done) return; done = true; timers.forEach(clearTimeout); offs.forEach(function(f) { f(); }); handlers.buzz = null; resolve(ev); }
+            function candidate(c) { cands.push(c); if (!scheduled) { scheduled = true; timers.push(setTimeout(resolveNow, 250)); } }
+            function resolveNow() {
+                if (done) return;
+                cands.sort(function(a, b) { return a.off - b.off; });
+                let c = cands[0];
+                if (!c) { JPOnline.send('buzzwin', { num: num, attempt: attempt, type: 'timeout' }); finish({ type: 'timeout' }); return; }
+                JPOnline.send('buzzwin', { num: num, attempt: attempt, type: c.type, who: c.who, right: c.right, off: c.off });
+                finish(c.type == 'user' ? { type: 'user', who: c.who } : { type: 'contestant', who: c.who, right: c.right, t: c.off });
+            }
+            handlers.buzz = function(who) {
+                who = me;
+                let now = JPClock.now();
+                if (now < getLock(who)) { setLock(who, now + S.lockoutMs); G.stats.lockouts++; hstat(who, 'lockouts'); JPAudio.play('lockout'); flashLocked(); return; }
+                if (!userAllowed(who)) return;
+                let off = Math.max(0, JPOnline.hostNow() - at);
+                if (hostHere()) candidate({ type: 'user', who: who, off: off });
+                else JPOnline.send('buzz', { num: num, attempt: attempt, off: off });
+            };
+            if (hostHere()) {
+                if (contestant) { let t = clamp(reaction(mult), 60, windowMs - 30); timers.push(setTimeout(function() { candidate({ type: 'contestant', who: contestant.who, right: contestant.right, off: t }); }, t)); }
+                timers.push(setTimeout(resolveNow, windowMs));
+                let take = function(p) { if (p.num != num || p.attempt != attempt) return; let who = onlineNameOf(p.from); if (!who || !userAllowed(who)) return; candidate({ type: 'user', who: who, off: Math.max(0, +p.off || 0) }); };
+                for (let p of JPOnline.drain('buzz', function(p) { return p.num == num && p.attempt == attempt; })) take(p);
+                offs.push(JPOnline.on('buzz', take));
+            } else {
+                JPOnline.waitFor('buzzwin', function(p) { return p.num == num && p.attempt == attempt; }, windowMs + 8000).then(function(p) {
+                    if (!p) { finish({ type: 'timeout', lost: true }); return; }
+                    finish(p.type == 'user' ? { type: 'user', who: p.who } : p.type == 'contestant' ? { type: 'contestant', who: p.who, right: p.right, t: p.off } : { type: 'timeout' });
+                });
+            }
+        });
+    }
+    // After each clue the host's standings are the standings.
+    function onlineScoresSync() {
+        return JPOnline.on('scores', function(p) {
+            if (!online() || hostHere()) return;
+            if (G.online.lastScoresNum != null && p.num < G.online.lastScoresNum) return;
+            G.online.lastScoresNum = p.num;
+            let changed = false;
+            for (let n in p.scores) if (G.scores[n] !== p.scores[n]) { G.scores[n] = p.scores[n]; changed = true; }
+            if (changed) { for (let n in G.scores) { let el = podium(n); if (el) { let sc = el.querySelector('.jp-pscore'); if (sc) { sc.textContent = money(G.scores[n]); sc.classList.toggle('jp-neg', G.scores[n] < 0); } } } }
+        });
+    }
+    // The finished game: the host reports it; everyone learns the ratings.
+    async function finishOnline(tok) {
+        let results = humans().map(function(hm) {
+            let e = gameEntry({ }, hm);
+            return { user_id: onlineIdOf(hm), score: e.score, coryat: e.coryat, place: e.place, won: e.won, answered: e.answered, correct: e.correct, dd: e.dd, fj: e.fj,
+                     opponents: humans().filter(function(x) { return x != hm; }).map(function(x) { return { name: x, score: G.scores[x] }; }).concat(e.contestants) };
+        });
+        let deltas = null;
+        if (hostHere()) {
+            try { deltas = await JPOnline.finishRoom(G.online.room.id, results); } catch (e) { deltas = { error: e.message }; }
+            JPOnline.send('finished', { deltas: deltas });
+        } else {
+            setHint('Waiting for the final word…');
+            let ev = await JPOnline.waitFor('finished', null, 30000);
+            deltas = ev ? ev.deltas : null;
+        }
+        if (!alive(tok)) return;
+        G.online.deltas = deltas;
+        try { await JPOnline.loadProfile(); } catch (e) { }
+    }
+    function ratingLine() {
+        if (!online() || !G.online.deltas) return '';
+        let d = G.online.deltas[G.online.myId];
+        if (G.online.deltas.error) return '<p class="jp-note">The service could not record this game: ' + esc(G.online.deltas.error) + '</p>';
+        if (!d) return G.online.mode == 'ranked' ? '' : '<p class="jp-note">' + modeLabel(G.online.mode) + ' — no rating change.</p>';
+        return '<p><b>Your rating: ' + d.before + ' → ' + d.after + ' (' + (d.delta >= 0 ? '+' : '') + d.delta + ')</b>' + (JPOnline.profile ? ' <span class="jp-note">· average Coryat in ranked play ' + money(JPOnline.profile.ranked_games ? Math.round(JPOnline.profile.ranked_coryat_sum / JPOnline.profile.ranked_games) : 0) + ' over ' + JPOnline.profile.ranked_games + ' game' + (JPOnline.profile.ranked_games == 1 ? '' : 's') + '</span>' : '') + '</p>';
+    }
+
+    // ---- getting into a game -------------------------------------------------------
+    // The room is known (a match from the queue, or a lobby the host started):
+    // everyone lands on the game's page with #jplive-room=<id>, joins the
+    // channel, and the host starts the game once everyone is there.
+    async function onlineLanding(roomId) {
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+        await JPOnline.init();
+        let st = null;
+        if (JPOnline.signedIn) { try { st = await JPOnline.roomState(roomId); } catch (e) { } }
+        if (!document.getElementById('live_btn') && st && st.room && st.room.archive_game_id == +gameId()) {
+            // Not a playable page (the archive has no such game, or no board): the host picks another game.
+            if (st.room.host == JPOnline.user.id && st.room.mode != 'custom') {
+                try { let g = await JPOnline.reroll(roomId); location.href = 'showgame.php?game_id=' + g + '#jplive-room=' + roomId; } catch (e) { }
+            } else {
+                for (let i = 0; i < 40; i++) { await new Promise(function(r) { setTimeout(r, 3000); }); try { let s2 = await JPOnline.roomState(roomId); if (s2 && s2.room.archive_game_id != st.room.archive_game_id) { location.href = 'showgame.php?game_id=' + s2.room.archive_game_id + '#jplive-room=' + roomId; return; } } catch (e) { } }
+            }
+            return;
+        }
+        if (!document.getElementById('live_btn')) return;
+        startLiveGame();
+        if (!JPOnline.signedIn) { showOnlineSignIn(function() { onlineLanding(roomId); }, 'This is an online game. Sign in to join it.'); return; }
+        if (!st || !st.room) { showPanel('<h1>No such game</h1><p>This game\'s room is gone (or you are not one of its players).</p><p><button class="jp-btn jp-cancel">Back</button></p>').querySelector('.jp-cancel').onclick = function() { showSetup(); }; return; }
+        if (st.room.archive_game_id != +gameId()) { location.href = 'showgame.php?game_id=' + st.room.archive_game_id + '#jplive-room=' + roomId; return; }
+        if (st.room.status == 'done' || st.room.status == 'abandoned') { showPanel('<h1>That game is over</h1><p>This room has already finished.</p><p><button class="jp-btn jp-cancel">Back</button></p>').querySelector('.jp-cancel').onclick = function() { showSetup(); }; return; }
+        await showOnlineWaiting(st);
+    }
+    async function showOnlineWaiting(st) {
+        let room = st.room, tok = ++runToken;
+        setHeader(modeLabel(room.mode), gameTitle(), '');
+        let panel = showPanel('<h1>' + esc(modeLabel(room.mode)) + '</h1><p class="jp-online-status">Joining the game…</p><div class="jp-online-players"></div><p><button class="jp-btn jp-secondary jp-cancel">Leave</button></p>');
+        panel.querySelector('.jp-cancel').onclick = function() { JPOnline.disconnect(); try { if (room.host == JPOnline.user.id && room.mode != 'custom') JPOnline.abandonRoom(room.id); else JPOnline.leaveRoom(room.id); } catch (e) { } G.online = null; loadSettings(); showSetup(); };
+        // Set the game up (players, settings) so the podiums show who's coming.
+        loadSettings();
+        let overlay = room.mode == 'custom' ? Object.assign({ }, room.settings || { }) : Object.assign({ }, ONLINE_MATCH_SETTINGS);
+        for (let k in overlay) if (ROOM_SETTING_KEYS.indexOf(k) >= 0) S[k] = overlay[k];
+        S.answerMode = S.micMode == 'off' ? 'typed' : 'speech';
+        let taken = archiveNames(), byId = { }, byName = { }, names = [ ];
+        for (let p of st.players) { let nm = p.name; while (taken.indexOf(nm) >= 0 || names.indexOf(nm) >= 0) nm += ' 2'; names.push(nm); byId[p.user_id] = nm; byName[nm] = p.user_id; }
+        G.online = { room: room, players: st.players, mode: room.mode, hostId: room.host, host: room.host == JPOnline.user.id, me: byId[JPOnline.user.id], myId: JPOnline.user.id, byId: byId, byName: byName, names: names, attempt: 0, gone: { }, overlay: overlay };
+        G.humans = names; G.scores = { }; for (let n of allPlayers()) G.scores[n] = 0; renderPodiums();
+        let players = function(present) {
+            return '<table class="jp-standings jp-inline">' + st.players.map(function(p) { let here = present && present[p.user_id]; return '<tr><td>' + esc(byId[p.user_id]) + (p.user_id == room.host ? ' <span class="jp-note">(host)</span>' : '') + (p.user_id == JPOnline.user.id ? ' <span class="jp-note">(you)</span>' : '') + '</td><td>' + (here ? '<span class="jp-plus">here</span>' : '<span class="jp-note">not yet…</span>') + '</td></tr>'; }).join('') + '</table>';
+        };
+        try { await JPOnline.connect(room.id, room.host, function(present) { onlinePresence(present); let pl = panel.querySelector('.jp-online-players'); if (pl && pl.isConnected) pl.innerHTML = players(present); }); }
+        catch (e) { panel.querySelector('.jp-online-status').textContent = 'Could not join the game: ' + e.message; return; }
+        if (!alive(tok)) return;
+        panel.querySelector('.jp-online-status').innerHTML = hostHere() ? 'Waiting for everyone to arrive. The game starts on its own when they have.' : 'Waiting for the host to start the game…';
+        panel.querySelector('.jp-online-players').innerHTML = players(JPOnline.presence());
+        let unsub = onlineScoresSync();
+        G.online.unsub = unsub;
+        await JPOnline.syncClock();
+        let all = st.players.map(function(p) { return p.user_id; });
+        if (hostHere()) {
+            let deadline = Date.now() + (room.mode == 'custom' ? 120000 : 75000);
+            while (alive(tok) && Date.now() < deadline && !all.every(function(id) { return JPOnline.isPresent(id); })) await new Promise(function(r) { setTimeout(r, 500); });
+            if (!alive(tok)) return;
+            let missing = all.filter(function(id) { return !JPOnline.isPresent(id); });
+            if (missing.length && room.mode == 'ranked') {
+                JPOnline.send('abort', { reason: 'A player never arrived, so this ranked match is off. Nothing is scored.' });
+                try { await JPOnline.abandonRoom(room.id); } catch (e) { }
+                onlineLost('A player never arrived, so this ranked match is off. Nothing is scored.');
+                return;
+            }
+            for (let i = 3; i > 0; i--) { panel.querySelector('.jp-online-status').innerHTML = 'Everyone\'s here. Starting in ' + i + '…'; JPOnline.send('countdown', { n: i }); await new Promise(function(r) { setTimeout(r, 1000); }); if (!alive(tok)) return; }
+            JPOnline.send('start', { at: JPOnline.hostNow() });
+            startGame();
+        } else {
+            let offC = JPOnline.on('countdown', function(p) { let s = panel.querySelector('.jp-online-status'); if (s && s.isConnected) s.innerHTML = 'Everyone\'s here. Starting in ' + p.n + '…'; });
+            let ev = await Promise.race([ JPOnline.waitFor('start', null, 600000), JPOnline.waitFor('abort', null, 600000) ]);
+            offC();
+            if (!alive(tok)) return;
+            if (!ev) { onlineLost('The host never started the game.'); return; }
+            if (ev.t == 'abort') { onlineLost(ev.reason); return; }
+            startGame();
+        }
+    }
+
+    // ---- the account box and the online menu on the setup screen ------------------
+    function accountBox() {
+        if (!onlineAvailable()) return '';
+        if (!JPOnline.signedIn) {
+            return '<div class="jp-online-box"><b>Play online</b> — against friends in a lobby, or anyone in a ranked or unrated match. <button class="jp-btn jp-secondary jp-signin" style="padding:3px 10px;font-size:0.9em">Sign in</button> <button class="jp-btn jp-secondary jp-signup" style="padding:3px 10px;font-size:0.9em">Create an account</button></div>';
+        }
+        let p = JPOnline.profile || { name: '?' };
+        let rated = p.ranked_games ? ' · rating <b>' + p.elo + '</b> · average Coryat ' + money(Math.round(p.ranked_coryat_sum / p.ranked_games)) + ' over ' + p.ranked_games + ' ranked game' + (p.ranked_games == 1 ? '' : 's') : ' · unrated so far';
+        return '<div class="jp-online-box">Signed in as <b>' + esc(p.name) + '</b>' + rated + ' <button class="jp-btn jp-secondary jp-signout" style="padding:2px 8px;font-size:0.85em">Sign out</button> <button class="jp-btn jp-secondary jp-delete-acct" style="padding:2px 8px;font-size:0.85em;opacity:0.7" title="Remove the account and everything kept with it">Delete account</button>' +
+            '<div class="jp-online-row"><button class="jp-btn jp-ranked">Ranked match</button> <button class="jp-btn jp-unrated">Unrated match</button> <button class="jp-btn jp-secondary jp-lobby">Create a lobby</button> ' +
+            '<span class="jp-join-wrap"><input class="jp-join-code" placeholder="lobby code" maxlength="6" style="width:7em;min-width:7em;text-transform:uppercase"> <button class="jp-btn jp-secondary jp-join">Join</button></span> <button class="jp-btn jp-secondary jp-leaderboard">Leaderboard</button></div>' +
+            '<div class="jp-note">Matches are three players, no archive contestants, the same timing for everyone (' + ONLINE_MATCH_SETTINGS.buzzWindowSeconds + ' s to ring in, ' + ONLINE_MATCH_SETTINGS.answerSeconds + ' s to respond); ranked ones move your rating (by finishing place) and your average Coryat. A lobby plays this page\'s game with your settings, contestants and all, for two or three of you.</div></div>';
+    }
+    function bindAccountBox(panel, back) {
+        let q = function(sel) { return panel.querySelector(sel); };
+        let b;
+        if ((b = q('.jp-signin'))) b.onclick = function() { showOnlineSignIn(back, null, 'in'); };
+        if ((b = q('.jp-signup'))) b.onclick = function() { showOnlineSignIn(back, null, 'up'); };
+        if ((b = q('.jp-signout'))) b.onclick = async function() { await JPOnline.signOut(); back(); };
+        if ((b = q('.jp-delete-acct'))) b.onclick = async function() { if (!confirm('Delete your account? Your name, results and ratings on the service are removed for good. (The games saved on this computer stay.)')) return; try { await JPOnline.deleteAccount(); } catch (e) { alert(e.message); } back(); };
+        if ((b = q('.jp-ranked'))) b.onclick = function() { showQueue('ranked'); };
+        if ((b = q('.jp-unrated'))) b.onclick = function() { showQueue('unrated'); };
+        if ((b = q('.jp-lobby'))) b.onclick = async function() { try { let st = await JPOnline.createRoom(+gameId(), roomSettingsFromS()); showLobby(st); } catch (e) { alert('Could not create the lobby: ' + e.message); } };
+        if ((b = q('.jp-join'))) b.onclick = async function() { let code = (q('.jp-join-code').value || '').trim().toUpperCase(); if (code.length < 4) { q('.jp-join-code').focus(); return; } try { let st = await JPOnline.joinRoom(code); showLobby(st); } catch (e) { alert(e.message); } };
+        let jc = q('.jp-join-code');
+        if (jc) jc.addEventListener('keydown', function(e) { if (e.key == 'Enter') { e.preventDefault(); q('.jp-join').click(); } e.stopPropagation(); });
+        if ((b = q('.jp-leaderboard'))) b.onclick = function() { showLeaderboard(back); };
+    }
+    // mode: 'in' | 'up'
+    function showOnlineSignIn(back, note, mode) {
+        mode = mode || 'in';
+        let panel = showPanel('<h1>' + (mode == 'up' ? 'Create an account' : 'Sign in') + '</h1>' + (note ? '<p>' + esc(note) + '</p>' : '') +
+            '<div class="jp-form-col">' +
+            (mode == 'up' ? '<label>Display name <input class="jp-acct-name" maxlength="20" placeholder="what the others see"></label>' : '') +
+            '<label>Email <input class="jp-acct-email" type="email" autocomplete="email"></label>' +
+            '<label>Password <input class="jp-acct-pw" type="password" autocomplete="' + (mode == 'up' ? 'new-password' : 'current-password') + '"></label>' +
+            '<div class="jp-acct-err jp-minus"></div>' +
+            '<p><button class="jp-btn jp-acct-go">' + (mode == 'up' ? 'Create the account' : 'Sign in') + '</button> <button class="jp-btn jp-secondary jp-acct-swap">' + (mode == 'up' ? 'I have an account' : 'Create an account instead') + '</button> <button class="jp-btn jp-secondary jp-cancel">Back</button></p>' +
+            '<p class="jp-note">' + (mode == 'up' ? 'Your name shows to other players and on the leaderboard. Your email is only for signing in; nothing is sent to it.' : '') + ' Your results (scores, Coryat, which games you\'ve played) are kept with the account so matchmaking never hands you a game you\'ve played.</p></div>');
+        let q = function(sel) { return panel.querySelector(sel); };
+        let go = async function() {
+            let err = q('.jp-acct-err'); err.textContent = '';
+            let email = q('.jp-acct-email').value.trim(), pw = q('.jp-acct-pw').value;
+            q('.jp-acct-go').disabled = true;
+            try {
+                if (mode == 'up') await JPOnline.signUp(email, pw, q('.jp-acct-name').value.trim());
+                else await JPOnline.signIn(email, pw);
+                await syncOnline();
+                back();
+            } catch (e) { err.textContent = e.message; q('.jp-acct-go').disabled = false; }
+        };
+        q('.jp-acct-go').onclick = go;
+        panel.querySelectorAll('input').forEach(function(inp) { inp.addEventListener('keydown', function(e) { if (e.key == 'Enter') { e.preventDefault(); go(); } e.stopPropagation(); }); });
+        q('.jp-acct-swap').onclick = function() { showOnlineSignIn(back, note, mode == 'up' ? 'in' : 'up'); };
+        q('.jp-cancel').onclick = back;
+        setTimeout(function() { let f = q(mode == 'up' ? '.jp-acct-name' : '.jp-acct-email'); if (f) f.focus(); }, 0);
+        setHint('');
+    }
+    // Your saved games go up to the account; the games you've played anywhere come down.
+    async function syncOnline() {
+        if (!onlineAvailable() || !JPOnline.signedIn) return;
+        try { chrome.storage.local.get([ 'jpLiveMaxGame' ], function(o) { let m = Math.max(+(o && o.jpLiveMaxGame) || 0, +gameId() || 0); if (m) JPOnline.noteMaxGame(m); }); } catch (e) { }
+        try {
+            let mine = loadScores().filter(function(e) { return entryPlayer(e) == YOU && !e.online; });
+            let ids = await JPOnline.syncUp(mine);
+            if (typeof JPPlayed !== 'undefined' && ids && ids.length) JPPlayed.importIds(ids);
+        } catch (e) { }
+    }
+    function showQueue(mode) {
+        let tok = ++runToken, t0 = Date.now(), stopped = false;
+        let panel = showPanel('<h1>' + esc(modeLabel(mode)) + '</h1><p class="jp-online-status">Looking for two more players…</p><p class="jp-note jp-queue-time"></p>' +
+            '<p class="jp-note">You\'ll be sent to the game\'s page when three are found; keep this tab open. ' + (mode == 'ranked' ? 'Ranked: your rating moves with your finishing place, and your average Coryat counts.' : 'Unrated: nothing counts but bragging rights.') + '</p>' +
+            '<p><button class="jp-btn jp-secondary jp-cancel">Cancel</button></p>');
+        panel.querySelector('.jp-cancel').onclick = async function() { stopped = true; try { await JPOnline.dequeue(); } catch (e) { } showSetup(); };
+        (async function() {
+            try { await JPOnline.enqueue(mode); } catch (e) { panel.querySelector('.jp-online-status').textContent = 'Could not join the queue: ' + e.message; return; }
+            while (!stopped && alive(tok)) {
+                let s = Math.round((Date.now() - t0) / 1000);
+                let tt = panel.querySelector('.jp-queue-time'); if (tt) tt.textContent = 'Waiting ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+                let roomId = null;
+                try { roomId = await JPOnline.matchMe(); } catch (e) { }
+                if (roomId) {
+                    stopped = true;
+                    let st = null; try { st = await JPOnline.roomState(roomId); } catch (e) { }
+                    try { await JPOnline.dequeue(); } catch (e) { }
+                    if (st && st.room) { panel.querySelector('.jp-online-status').textContent = 'Match found! Off to the game…'; goToRoom(st.room.archive_game_id, roomId); }
+                    return;
+                }
+                await new Promise(function(r) { setTimeout(r, 2500); });
+            }
+        })();
+        setHint('');
+    }
+    function showLobby(st) {
+        let tok = ++runToken, room = st.room, host = room.host == JPOnline.user.id, stopped = false;
+        let link = 'https://j-archive.com/showgame.php?game_id=' + room.archive_game_id + '#jplive-join=' + room.code;
+        let render = function(st) {
+            let players = st.players.map(function(p) { return '<tr><td>' + esc(p.name) + (p.user_id == st.room.host ? ' <span class="jp-note">(host)</span>' : '') + '</td><td class="jp-note">' + (p.ranked_games ? 'rating ' + p.elo : 'unrated') + '</td></tr>'; }).join('');
+            let s = st.room.settings || { };
+            let summary = (s.contestantsOn === false ? 'no archive contestants' : 'with the archive contestants (' + (DIFFICULTY[s.difficulty] ? DIFFICULTY[s.difficulty].label.replace(/ \(.*$/, '') : s.difficulty) + ')') + ' · ' + s.buzzWindowSeconds + ' s to ring in · ' + s.answerSeconds + ' s to respond';
+            return '<h1>Lobby ' + esc(st.room.code) + '</h1>' +
+                '<p>Game: <b>' + esc(st.room.archive_game_id == +gameId() ? gameTitle() : 'archive game ' + st.room.archive_game_id) + '</b> · ' + esc(summary) + '</p>' +
+                '<p>Invite: tell them the code <b style="font-size:1.4em;letter-spacing:0.1em">' + esc(st.room.code) + '</b> (Join on their setup screen), or send this link: <input class="jp-invite" readonly value="' + esc(link) + '" style="width:100%;min-width:20em"></p>' +
+                '<table class="jp-standings jp-inline">' + players + '</table>' +
+                '<p class="jp-online-status jp-note">' + (host ? (st.players.length >= 2 ? 'Ready when you are.' : 'Waiting for at least one more player…') : 'Waiting for ' + esc((st.players.find(function(p) { return p.user_id == st.room.host; }) || { }).name || 'the host') + ' to start the game…') + '</p>' +
+                '<p>' + (host ? '<button class="jp-btn jp-start-room"' + (st.players.length >= 2 ? '' : ' disabled') + '>Start the game</button> <button class="jp-btn jp-secondary jp-room-settings">Settings</button> ' : '') + '<button class="jp-btn jp-secondary jp-cancel">Leave</button></p>' +
+                (host ? '<p class="jp-note">The lobby plays this page\'s game with your current settings (contestants, speed, timing); Settings changes them for everyone. Voices and microphones stay each player\'s own.</p>' : '');
+        };
+        let panel = showPanel(render(st));
+        let bind = function() {
+            let q = function(sel) { return panel.querySelector(sel); };
+            q('.jp-cancel').onclick = async function() { stopped = true; try { await JPOnline.leaveRoom(room.id); } catch (e) { } showSetup(); };
+            let sr = q('.jp-start-room');
+            if (sr) sr.onclick = async function() { try { let s2 = await JPOnline.startRoom(room.id); stopped = true; goToRoom(s2.room.archive_game_id, room.id); } catch (e) { alert(e.message); } };
+            let rs = q('.jp-room-settings');
+            if (rs) rs.onclick = function() {
+                let form = showPanel('<h1>Lobby settings</h1>' + settingsForm() + '<p><button class="jp-btn jp-back">Back to the lobby</button></p>');
+                bindSettingsForm(form);
+                form.querySelector('.jp-back').onclick = async function() { try { let s3 = await JPOnline.setRoom(room.id, +gameId(), roomSettingsFromS()); panel = showPanel(render(s3)); bind(); } catch (e) { alert(e.message); } };
+            };
+            let inv = q('.jp-invite'); if (inv) inv.onclick = function() { inv.select(); };
+        };
+        bind();
+        (async function() {
+            while (!stopped && alive(tok)) {
+                await new Promise(function(r) { setTimeout(r, 2500); });
+                if (stopped || !alive(tok)) return;
+                let s2 = null; try { s2 = await JPOnline.roomState(room.id); } catch (e) { }
+                if (!s2 || !s2.room) { if (!stopped) { showPanel('<h1>The lobby closed</h1><p>The host left.</p><p><button class="jp-btn jp-cancel">Back</button></p>').querySelector('.jp-cancel').onclick = function() { showSetup(); }; } return; }
+                if (s2.room.status == 'playing') { stopped = true; goToRoom(s2.room.archive_game_id, room.id); return; }
+                if (s2.room.status == 'abandoned') { stopped = true; showPanel('<h1>The lobby closed</h1><p>The host left.</p><p><button class="jp-btn jp-cancel">Back</button></p>').querySelector('.jp-cancel').onclick = function() { showSetup(); }; return; }
+                if (JSON.stringify(s2.players) != JSON.stringify(st.players) || JSON.stringify(s2.room.settings) != JSON.stringify(st.room.settings)) { st = s2; if (!panel.querySelector('.jp-form')) { panel = showPanel(render(st)); bind(); } }
+            }
+        })();
+        setHint('');
+    }
+    async function showLeaderboard(back) {
+        let panel = showPanel('<h1>Leaderboard</h1><p class="jp-note">Loading…</p><p><button class="jp-btn jp-back">Back</button></p>');
+        panel.querySelector('.jp-back').onclick = back;
+        let rows = [ ];
+        try { rows = await JPOnline.leaderboard(); } catch (e) { }
+        if (!panel.isConnected) return;
+        let me = JPOnline.user ? JPOnline.user.id : '';
+        let html = rows.length ? '<table class="jp-results jp-scores"><tr><th>#</th><th>Player</th><th>Rating</th><th>Ranked games</th><th>1st / 2nd / 3rd</th><th>Average Coryat</th><th>Best Coryat</th></tr>' +
+            rows.map(function(r, i) { return '<tr' + (r.id == me ? ' class="jp-you"' : '') + '><td class="jp-num">' + (i + 1) + '</td><td>' + esc(r.name) + '</td><td class="jp-num">' + r.elo + '</td><td class="jp-num">' + r.ranked_games + '</td><td class="jp-num">' + r.ranked_firsts + ' / ' + r.ranked_seconds + ' / ' + r.ranked_thirds + '</td><td class="jp-num">' + (r.avg_coryat == null ? '—' : money(r.avg_coryat)) + '</td><td class="jp-num">' + (r.best_coryat == null ? '—' : money(r.best_coryat)) + '</td></tr>'; }).join('') + '</table>'
+            : '<p class="jp-note">Nobody has finished a ranked match yet.</p>';
+        panel.innerHTML = '<h1>Leaderboard</h1>' + html + '<p class="jp-note">Rating: Elo by finishing place in ranked matches (everyone starts at 1200). Average Coryat: regular-clue money per ranked game.</p><p><button class="jp-btn jp-back">Back</button></p>';
+        panel.querySelector('.jp-back').onclick = back;
     }
 
     // ------------------------------------------------------------ results
@@ -2953,7 +3464,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function recordScore() {
         if (G.recorded) return G.recorded;
         let stamp = Date.now().toString(36), date = new Date().toISOString(), list = loadScores();
-        G.recordedAll = humans().map(function(hm, i) { return gameEntry({ id: stamp + (i ? '-' + i : ''), date: date, game: gameTitle(), gameId: gameId() }, hm); });
+        let who = online() ? [ G.online.me ] : humans();
+        G.recordedAll = who.map(function(hm, i) {
+            let e = gameEntry({ id: stamp + (i ? '-' + i : ''), date: date, game: gameTitle(), gameId: gameId() }, hm);
+            if (online()) { e.human = hm; e.player = YOU; e.online = G.online.mode; }   // an online game is yours, under your own name at the podium
+            return e;
+        });
         for (let e of G.recordedAll) list.push(e);
         saveScores(list);
         G.recorded = G.recordedAll[0];
@@ -2966,7 +3482,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (!G.recorded) return;
         let list = loadScores();
         for (let e of (G.recordedAll || [ G.recorded ])) {
-            gameEntry(e, entryPlayer(e));
+            let extra = { human: e.human, player: e.player, online: e.online };
+            gameEntry(e, e.human || entryPlayer(e));
+            if (extra.online) Object.assign(e, extra);
             let i = list.findIndex(function(x) { return x.id == e.id; });
             if (i >= 0) list[i] = e;
         }
@@ -3152,31 +3670,34 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         applyMicHold();                                   // the game is over: let the mic go
         let saved = loadScores(), multi = humans().length > 1;
         let sections = (G.recordedAll || [ G.recorded ]).map(function(entry) {
-            let hm = entryPlayer(entry), h = (G.hstats || { })[hm] || { };
-            let all = saved.filter(function(e) { return entryPlayer(e) == hm; }).sort(function(a, b) { return b.score - a.score; });
+            let hm = entry.human || entryPlayer(entry), h = (G.hstats || { })[hm] || { };
+            let all = saved.filter(function(e) { return entryPlayer(e) == entryPlayer(entry); }).sort(function(a, b) { return b.score - a.score; });
             let rank = all.findIndex(function(e) { return e.id == entry.id; }) + 1;
             let t = statsSummary(all);
             let acc = entry.answered ? Math.round(100 * entry.correct / entry.answered) : 0;
             let streak = (t.winStreak >= 2 ? '<b>' + t.winStreak + ' wins in a row' + (t.winStreak >= t.bestWinStreak ? ' — a best' : '') + '.</b> ' : '') +
                          (t.dayStreak >= 2 ? (hm == YOU ? 'You\'ve' : esc(hm) + ' has') + ' played ' + t.dayStreak + ' days running' + (t.dayStreak >= t.bestDayStreak ? ' (a best)' : '') + '. ' : '');
-            return '<h2>' + (hm == YOU ? 'Your game' : esc(hm) + '\'s game') + '</h2>' +
+            return '<h2>' + (hm == YOU || (online() && isMe(hm)) ? 'Your game' : esc(hm) + '\'s game') + '</h2>' + (online() ? ratingLine() : '') +
                 '<p>Clues played: ' + st.clues + ' · buzzer races won: ' + (h.buzzWins || 0) + (multi ? '' : ' · lost: ' + st.buzzLost) + ' · early buzzes: ' + (h.lockouts || 0) + '</p>' +
                 '<p>Responses: ' + entry.answered + ' · correct: ' + entry.correct + ' · incorrect: ' + (entry.answered - entry.correct) + ' · accuracy: ' + acc + '% · Coryat score: <b>' + money(entry.coryat) + '</b>' + (t.avgCoryat != null && all.length > 1 ? ' <span class="jp-note">(' + (hm == YOU ? 'your' : 'the') + ' average: ' + money(t.avgCoryat) + ')</span>' : '') + '</p>' +
-                '<p>' + (rank == 1 && all.length > 1 ? '<b>A new high score!</b> ' : '') + streak + 'This game ranks #' + rank + ' of ' + all.length + ' on this computer' + (all.length > 1 ? ' · win rate ' + t.winRate + '%' : '') + '. <button class="jp-btn jp-secondary jp-scores" data-player="' + esc(hm) + '" style="padding:3px 10px;font-size:0.9em">High scores</button> ' +
-                (hm == entryPlayer(G.recorded) ? '<button class="jp-btn jp-secondary jp-edit-results" style="padding:3px 10px;font-size:0.9em">Edit results</button> <span class="jp-note">(a call the judge got wrong — Final Jeopardy! included — changes the standings and the saved game)</span>' : '') + '</p>';
+                '<p>' + (rank == 1 && all.length > 1 ? '<b>A new high score!</b> ' : '') + streak + 'This game ranks #' + rank + ' of ' + all.length + ' on this computer' + (all.length > 1 ? ' · win rate ' + t.winRate + '%' : '') + '. <button class="jp-btn jp-secondary jp-scores" data-player="' + esc(entryPlayer(entry)) + '" style="padding:3px 10px;font-size:0.9em">High scores</button> ' +
+                (hm == entryPlayer(G.recorded) && !online() ? '<button class="jp-btn jp-secondary jp-edit-results" style="padding:3px 10px;font-size:0.9em">Edit results</button> <span class="jp-note">(a call the judge got wrong — Final Jeopardy! included — changes the standings and the saved game)</span>' : '') + '</p>';
         }).join('');
-        showPanel('<h1>' + (winner == YOU ? 'You win!' : esc(winner) + ' wins' + (isHuman(winner) ? '!' : '')) + '</h1>' + standingsTable() + sections +
-            dynamicsHtml() +
-            '<p>' + (nextGameLink() ? '<button class="jp-btn jp-next">Play the next game &rarr;</button> ' : '') +
-            '<button class="jp-btn' + (nextGameLink() ? ' jp-secondary' : '') + ' jp-again">Play this game again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button></p>' +
-            (nextGameLink() ? '<p class="jp-note">The next game in the archive (the day after this one) opens ready to start, with these settings.</p>'
-                            : '<p class="jp-note">This is the most recent game in the archive, so there is no next game yet.</p>'));
+        let title = winner == YOU || (online() && isMe(winner)) ? 'You win!' : esc(winner) + ' wins' + (isHuman(winner) ? '!' : '');
+        let ending = online()
+            ? '<p><button class="jp-btn jp-again">Play online again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button></p>'
+            : '<p>' + (nextGameLink() ? '<button class="jp-btn jp-next">Play the next game &rarr;</button> ' : '') +
+              '<button class="jp-btn' + (nextGameLink() ? ' jp-secondary' : '') + ' jp-again">Play this game again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button></p>' +
+              (nextGameLink() ? '<p class="jp-note">The next game in the archive (the day after this one) opens ready to start, with these settings.</p>'
+                              : '<p class="jp-note">This is the most recent game in the archive, so there is no next game yet.</p>');
+        showPanel('<h1>' + title + '</h1>' + (online() ? '<p class="jp-note">' + esc(modeLabel(G.online.mode)) + ' · ' + esc(gameTitle()) + '</p>' : '') + standingsTable() + sections + dynamicsHtml() + ending);
         let nx = U.stage.querySelector('.jp-next');
         if (nx) nx.onclick = function() { goToNextGame(); };
         U.stage.querySelectorAll('.jp-scores').forEach(function(b) { b.onclick = function() { showScores(showFinalStandings, b.dataset.player); }; });
-        U.stage.querySelector('.jp-edit-results').onclick = function() { showPauseMenu(); swapPauseContents('results'); };
+        let er = U.stage.querySelector('.jp-edit-results');
+        if (er) er.onclick = function() { showPauseMenu(); swapPauseContents('results'); };
         bindDynamics(U.stage);
-        U.stage.querySelector('.jp-again').onclick = function() { showSetup(); };
+        U.stage.querySelector('.jp-again').onclick = function() { if (online()) { JPOnline.disconnect(); G.online = null; loadSettings(); G.humans = humanNames(); G.scores = { }; for (let n of allPlayers()) G.scores[n] = 0; G.recorded = null; G.recordedAll = null; renderPodiums(); } showSetup(); };
         U.stage.querySelector('.jp-close').onclick = function() { quitLive(); };
         setHint('');
     }
@@ -3228,10 +3749,26 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         panel.querySelector('.jp-cancel').onclick = function() { quitLive(); };
         setHint('');
     }
+    // Online: a game's room (everyone lands here), a lobby invite, or just the online menu.
+    function onlineIfRequested() {
+        let mroom = location.hash.match(/^#jplive-room=([0-9a-f-]{36})$/), mjoin = location.hash.match(/^#jplive-join=([A-Za-z]{4,8})$/);
+        if (mroom) { onlineLanding(mroom[1]); return; }
+        if (!document.getElementById('live_btn') || !onlineAvailable()) return;
+        if (mjoin) {
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+            startLiveGame();
+            let code = mjoin[1].toUpperCase();
+            let join = function() { JPOnline.joinRoom(code).then(showLobby).catch(function(e) { let p = showPanel('<h1>Could not join</h1><p>' + esc(e.message) + '</p><p><button class="jp-btn jp-cancel">Back</button></p>'); p.querySelector('.jp-cancel').onclick = function() { showSetup(); }; }); };
+            JPOnline.init().then(function() { if (JPOnline.signedIn) join(); else showOnlineSignIn(join, 'You\'ve been invited to lobby ' + code + '. Sign in to join it.'); });
+        } else if (location.hash == '#jplive-online') {
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+            startLiveGame();
+        }
+    }
     // archive.js builds the page (and the Play Live button) at load; look after it.
-    if (location.hash == '#jplive-next' || location.hash == '#jplive-continue') {
+    if (/^#jplive-(next|continue|online|room=|join=)/.test(location.hash)) {
         let tries = 0;
-        let t = setInterval(function() { if (document.getElementById('live_btn') || ++tries > 50) { clearInterval(t); autoOpenIfRequested(); continueIfRequested(); } }, 100);
+        let t = setInterval(function() { if (document.getElementById('live_btn') || ++tries > 50) { clearInterval(t); autoOpenIfRequested(); continueIfRequested(); onlineIfRequested(); } }, 100);
     }
     // Games finished before the archive's pages kept the list: fill it in.
     if (typeof JPPlayed != 'undefined') JPPlayed.importScores(loadScores());

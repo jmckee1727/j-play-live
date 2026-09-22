@@ -128,6 +128,8 @@ are the archived ones. The category is shown across the top of every clue.
 | --- | --- |
 | `manifest.json` | Extension manifest (MV3). The game runs on `j-archive.com/showgame*` pages; `played.js` on every `j-archive.com` page. |
 | `played.js`, `played.css` | `JPPlayed`: the games you've finished (extension storage), the `✓` marks on the archive's lists, the note on a played game's page and the "pick up where you left off" panel. |
+| `online.js` | `JPOnline`: accounts (Supabase Auth), the cloud copy of your results, lobbies, the matchmaking queue, the leaderboard, and the room channel (broadcast + presence + a clock synced to the host). The game glue itself is the "online play" section of `live.js`. |
+| `vendor/supabase.js` | supabase-js (MIT), the service client. Loaded on game pages; nothing runs until you sign in. |
 | `archive.js` | The original j-play code: scrapes the page into `clues[]` (indexed by broadcast order), parses responses, and provides the review mode. Small additions are marked `j-play-live`. |
 | `clock.js` | `JPClock`: a pausable game clock. Every game timer runs on it, which is what makes Pause freeze the game mid-clue. |
 | `audio.js` | `JPAudio`: text-to-speech (`speak`), sound effects (`play`, with `sounds/` overrides), speech recognition (`listen`). |
@@ -157,6 +159,39 @@ keyboard and microphone: whoever wins the buzz answers out loud (or types), a mi
 ring in, whoever is right picks the next clue and plays the Daily Doubles they land on, and in Final
 Jeopardy! everyone wagers in turn (the others look away), thinks through the music together, then
 responds in turn. Every player gets their own saved game, and their own stats under **High scores**.
+
+## Online play (accounts, lobbies, ranked matches)
+
+Sign in (or create an account: a display name, an email and a password — nothing is ever sent
+to the email) from the box at the top of the setup screen, and the same box offers:
+
+* **Create a lobby** — plays this page's game with your settings (contestants on or off, speed,
+  timing) for two or three of you. Friends join with the six-letter code (Join on their own setup
+  screen) or the invite link; the host starts it. Only the host's y/n overrule is off online.
+* **Ranked match** and **Unrated match** — a queue. When three players are waiting, the service
+  picks an archive game none of you has finished and sends everyone to its page; the game starts
+  when all three have arrived (a ranked match with a no-show is called off). No archive
+  contestants: the three of you fight over every clue, with the same timing for everyone (6 s to
+  ring in, 8 s to respond). Ranked games move your **rating** (Elo by finishing place; everyone
+  starts at 1200) and your **average Coryat** in ranked play; the **Leaderboard** shows both.
+* Your results — scores, Coryat, which games you've played — are kept with the account, so the
+  matchmaking never repeats a game and your ✓ marks follow you to another computer. **Delete
+  account** removes all of it.
+
+How it works: every player's browser has the archive page, so the service never sees the
+archive's data — only what decides the game travels between players (who rang in first, what
+they said or typed, the picks, the wagers), over a private realtime channel. Everyone reads the
+clue with their own voice; the lights come on for all at one moment named by the game's host
+once every client is done reading, and ring-ins carry the time since that moment (clocks are
+synced to the host's when you join). The host arbitrates the buzzer race — the earliest ring-in
+within a short grace wins — speaks for a player who has gone quiet (a pick or a response is
+forced after a timeout), and reports the finished game; the service writes results and ratings.
+An online game can't be paused or rewound; leaving it lets the others go on. The correct
+responses are on every player's page, so this is a game of trust among friends, with ratings and
+a record to protect: statistical checks and reports are the plan for the ranked ladder.
+
+The service is a Supabase project (Postgres, Auth, Realtime, two edge functions); the client is
+the vendored `supabase-js`. Details in `PUBLISHING.md`.
 
 ## Picking up where you left off
 

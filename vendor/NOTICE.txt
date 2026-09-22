@@ -23,6 +23,10 @@ transformers.min.js is @huggingface/transformers 3.8.1 (Apache License 2.0, LICE
 used to run the Whisper speech-recognition model (openai/whisper, MIT; ONNX conversion by onnx-community)
 for the studio ear. Model files are downloaded by the user at runtime and cached by the browser.
 
+supabase.js is @supabase/supabase-js 2.117.0 (MIT License, LICENSE-supabase-js.txt), the client
+for the accounts and online play service (sign-in, results, lobbies and the realtime channel of
+an online game). It is only used once you sign in.
+
 Fonts (fonts/)
 --------------
 Averia Serif Libre (fonts/AveriaSerifLibre-Bold.ttf), by Dan Sayers, and

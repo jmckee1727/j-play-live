@@ -39,6 +39,41 @@ The stable name matters: the page's button points at
 Unpacked copies don't update themselves; the page tells people how to replace the folder.
 Once the store listing is live, add the store link to the page and tell people to switch.
 
+## The online service (accounts, lobbies, matchmaking)
+
+Online play runs on a Supabase project, **j-play-live** (ref `ckcgupksgfadhtyhycdl`, us-east-1) in
+John's Supabase organization; the dashboard is https://supabase.com/dashboard/project/ckcgupksgfadhtyhycdl.
+The free plan covers it (two active projects per organization). What is there:
+
+- **Auth**: email + password accounts. Sign-up goes through the `signup` edge function (public,
+  no JWT), which creates the user already confirmed — so no confirmation mail is needed and the
+  project's default mail service (rate-limited) is never used — and inserts the profile row.
+  `delete_account` (JWT required) removes the caller's account; everything cascades.
+- **Tables** (all with row-level security): `profiles` (name, ratings; users can update only
+  their name), `results`, `played`, `rooms`, `room_players`, `queue`, `meta` (`max_game_id`).
+  Ratings and online results are written only by `finish_room`, a security-definer function the
+  host calls with everyone's result; Elo by finishing place (K = 48 for the first ten ranked games,
+  32 after) plus the Coryat sums. Other functions: `create_room`, `join_room`, `set_room`,
+  `start_room`, `leave_room`, `abandon_room`, `enqueue`, `match_me` (three oldest of a mode, a
+  random game in 3000..max_game_id none of them has played), `dequeue`, `reroll_game`,
+  `sync_played`, `note_max_game`, `room_state`; the `leaderboard` view.
+- **Realtime**: private broadcast channels `room:<id>`; policies on `realtime.messages` let
+  only a room's players send and receive. Broadcast delivery is not strictly ordered, so every
+  message is keyed (clue, attempt, sender) and the clients' `waitFor` reads from an inbox.
+- **Keys**: the extension ships the project URL and the *publishable* key (public by design;
+  row-level security is what protects the data). The service-role key lives only in the edge
+  functions' environment. Never put it in the extension.
+- **Migrations** were applied through the Supabase MCP (`jplay_core`, `jplay_functions`,
+  `jplay_realtime_policies`, `jplay_membership_helpers`); the SQL is in the dashboard's
+  migration history. `test/online/api.js` and `test/online/e2e_online.js` (three browsers with
+  the extension, a lobby game and a ranked match against the live service) are the tests; the
+  test accounts are `jplay-test-{ann,bob,cy}@example.com`.
+- **Abuse**: an account is an email and a name; there is no email verification, so an abuser can
+  make accounts freely. If that becomes a problem, turn on email confirmation (or a captcha) in
+  the dashboard and switch the client to the auth service's own sign-up. The correct responses are
+  on every player's page, so ranked play is trust plus detection; the `results` table has what a
+  statistical check needs (accuracy, reaction offsets can be added to the messages).
+
 ## Things to keep in mind
 
 - **Trademarks.** "Jeopardy!" is Jeopardy Productions' trademark. The listing uses the word to

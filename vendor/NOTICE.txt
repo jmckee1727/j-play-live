@@ -25,7 +25,7 @@ for the studio ear. Model files are downloaded by the user at runtime and cached
 
 Fonts (fonts/)
 --------------
-Bree Serif (fonts/BreeSerif-Regular.ttf), by TypeTogether, and Anton
-(fonts/Anton-Regular.ttf), by Vernon Adams, are used for the clue text and
-the board. Both are licensed under the SIL Open Font License 1.1
-(fonts/LICENSE-BreeSerif.txt, fonts/LICENSE-Anton.txt).
+Averia Serif Libre (fonts/AveriaSerifLibre-Bold.ttf), by Dan Sayers, and
+Anton (fonts/Anton-Regular.ttf), by Vernon Adams, are used for the clue text
+and the board. Both are licensed under the SIL Open Font License 1.1
+(fonts/LICENSE-AveriaSerifLibre.txt, fonts/LICENSE-Anton.txt).

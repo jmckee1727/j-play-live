@@ -71,6 +71,14 @@ var JPEar = (function() {
     let closeTimer = null;
     let micPref = 'auto';                                        // 'auto' | 'default' | a device id (see JPAudio.micChoice)
     function setMicPreference(p) { micPref = p || 'auto'; }
+    // Hold: keep the stream open between sessions (the whole game), so the
+    // input device never starts and stops. Audio outside a session is dropped.
+    let holding = false;
+    function setHold(on) {
+        holding = !!on;
+        if (holding) { openMic().then(function(ok) { if (ok) mlog('mic held open for the game'); }); }
+        else if (!session) closeMic();
+    }
     function openMic() {
         if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
         if (proc) return Promise.resolve(true);
@@ -138,7 +146,7 @@ var JPEar = (function() {
     // Close when the last session ends -- at once, or after a short linger for
     // loops that start the next session right away (picking by voice).
     function releaseMic(lingerMs) {
-        if (session || closeTimer || !stream) return;
+        if (holding || session || closeTimer || !stream) return;
         if (!lingerMs) { closeMic(); return; }
         closeTimer = setTimeout(function() { closeTimer = null; if (!session) closeMic(); }, lingerMs);
     }
@@ -301,7 +309,7 @@ var JPEar = (function() {
                 stopping = true;
                 s.inSpeech = false; s.buf = [ ]; s.bufLen = 0;           // whatever was in progress is dropped
                 finish();
-                closeMic();
+                if (!holding) closeMic();
             };
             openMic().then(function(ok) {
                 if (!ok) { err = state.micError || 'audio-capture'; if (err == 'not-allowed') err = 'not-allowed'; finish(); return; }
@@ -323,7 +331,7 @@ var JPEar = (function() {
 
     return {
         available: available, caps: caps, load: load, unload: unload, listen: listen, onStatus: onStatus,
-        openMic: openMic, closeMic: closeMic, micLabel: micLabel, micState: micState, active: active, setMicPreference: setMicPreference,
+        openMic: openMic, closeMic: closeMic, micLabel: micLabel, micState: micState, active: active, setMicPreference: setMicPreference, setHold: setHold, get holding() { return holding; },
         get state() { return state; }, get ready() { return state.loaded; }, get level() { return level; }, get noise() { return noise; },
         set enabled(v) { state.enabled = !!v; }, get enabled() { return state.enabled; },
         log: [ ],

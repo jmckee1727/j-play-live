@@ -4,7 +4,7 @@
 <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.55;color:#222;background:#fff}h1{font-size:1.8em}h2{font-size:1.2em;margin-top:1.6em}a{color:#0645ad}</style>
 </head><body>
 <h1>Privacy Policy — J-Play Live</h1>
-<p><em>Last updated: September 20, 2026</em></p>
+<p><em>Last updated: September 21, 2026</em></p>
 <p>J-Play Live is a browser extension that lets you play along with archived game shows on the J! Archive website (j-archive.com). It runs only on j-archive.com game pages.</p>
 <h2>What the extension collects</h2>
 <p>Nothing. The extension does not collect, store, or transmit any personal information, browsing history, or gameplay data. Your settings (difficulty, voice choice, and similar) are saved in your browser's local storage for j-archive.com and never leave your computer.</p>
@@ -12,7 +12,7 @@
 <p>The extension makes network requests in exactly two situations:</p>
 <ol>
 <li><strong>The studio voice.</strong> If you choose to download the studio voice, the extension downloads the open-source Kokoro speech model files from Hugging Face (huggingface.co and its content-delivery hosts) once and caches them in your browser. These requests are plain file downloads that carry no information about you. After the download, speech is generated entirely on your computer.</li>
-<li><strong>Speech recognition.</strong> If you choose to answer by voice, the game listens through your microphone after you ring in (and, if you keep "pick clues by voice" on, while you are choosing a clue). Two recognizers are offered. The <strong>studio ear</strong> downloads the open-source Whisper speech model from Hugging Face once (a plain file download, like the voice) and then transcribes your speech entirely on your computer; no audio leaves the machine. Until it is downloaded, or if you choose it instead, the extension uses <strong>Chrome's built-in recognizer</strong>, which sends microphone audio to Google's speech service while the game is listening; that is governed by Google's privacy policy, not by this extension. You can answer by typing instead, in which case no audio is captured.</li>
+<li><strong>Speech recognition.</strong> If you choose to answer by voice, the game listens through your microphone after you ring in (and, if you keep "pick clues by voice" on, while you are choosing a clue, or while you wager on a Daily Double). By default the microphone stays open for the whole game so that the audio device does not start and stop between clues, but audio is only processed while the game is listening for you; the rest is discarded at once, and nothing is recorded or stored. You can set the microphone to open only while the game listens, or turn it off and type, in Settings. Two recognizers are offered. The <strong>studio ear</strong> downloads the open-source Whisper speech model from Hugging Face once (a plain file download, like the voice) and then transcribes your speech entirely on your computer; no audio leaves the machine. Until it is downloaded, or if you choose it instead, the extension uses <strong>Chrome's built-in recognizer</strong>, which sends microphone audio to Google's speech service while the game is listening; that is governed by Google's privacy policy, not by this extension. You can answer by typing instead, in which case no audio is captured.</li>
 </ol>
 <p>The extension does not contact any server of its own. There is no analytics, advertising, or telemetry.</p>
 <h2>Permissions</h2>

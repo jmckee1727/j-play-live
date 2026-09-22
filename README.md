@@ -49,11 +49,16 @@ about 210 MB for the GPU build or 80 MB for the CPU build; a "small" model is of
 results on names), executed by ONNX Runtime in the same hidden extension page as the voice. It is
 the same every time, doesn't depend on Google's speech service, and nothing you say leaves the
 machine. Under **Recognition** in Settings, click **Download the studio ear**; it loads with each
-game. Whichever recognizer is in use, the microphone comes on only when you ring in (and while
-you pick clues by voice on your own board), never while someone else has the clue, and in Final
-Jeopardy! only after you ring in to respond. The first phrase with something in it is your
-response and is judged on the spot, right or wrong; a bare "What is…" or an "um" isn't a response
-yet, so the mic stays on for the rest of it. The mic is released the moment you've answered.
+game. Whichever recognizer is in use, the game only *listens* when it's your turn to speak: after
+you ring in (in Final Jeopardy! too), while you pick clues by voice on your own board, and while
+you wager on your Daily Double; never while someone else has the clue. The first phrase with
+something in it is your response and is judged on the spot, right or wrong; a bare "What is…" or
+an "um" isn't a response yet, so listening continues. The **Microphone** setting decides what
+happens to the device in between: *on for the whole game* (the default) holds the stream open from
+the first clue to the end, so the input never starts and stops mid-game — which is what makes
+headphones hiccup — with audio outside your turns discarded at once; *on only while the game
+listens* opens and releases it around each turn, so the mic light is off between turns; *off*
+means you type your responses.
 
 **Microphone** (Settings) chooses which mic the studio ear opens. *Automatic* takes the system
 default, except when that's a Bluetooth headset and there's a built-in mic: then the built-in one,
@@ -100,7 +105,7 @@ when it is loaded.
 | `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. |
 | `Enter` | Lock in a typed response or a wager (also moves on). A Daily Double wager can be spoken instead ("twelve hundred", "all of it"); a Final Jeopardy! wager is typed. Clicks outside the wager box confirm nothing. |
 | `Space` or a click during the Final Jeopardy! music | Ring in to respond: the music ducks, the mic opens, and your first phrase is locked in. (Typing works throughout; with the box empty, Space rings in.) |
-| `y` / `n` | Overrule the judge on your last response (until the next clue). The money, the rebound and control of the board all follow. |
+| `y` / `n` | Overrule the judge on your last response (until the next clue). The correct response is shown after every verdict, right or wrong, so you can check the call and learn the exact wording. The money, the rebound and control of the board all follow. |
 | **Rewind** (pause menu) | Every clue played so far, in order. Go back to the moment before any of them: that clue and everything after it are played again with the board, the money and control as they were; your responses from that point are cleared. |
 | **Edit results** (pause menu) | Every response of yours, each with Right / No response / Wrong. Change one and the money follows: yours, and that of anyone who rang in after you on that clue (mark yourself right and the rebound never happened; mark yourself wrong and it plays out as broadcast). The ring-in order and control of the board stay as they happened. |
 | a click, the buzz key or `Enter` during any line of dialogue | Skips the rest of that line (the clue reading itself excepted — a click then is a buzz). |
@@ -142,9 +147,12 @@ are the archived ones. The category is shown across the top of every clue.
 
 ## High scores and statistics
 
-Every finished game is recorded in this browser (your score, place, accuracy, Coryat score, the
-game) and listed under **High scores** on the setup screen and the final screen, with your win
-rate, average score, average and best Coryat. The **Coryat score** is your money from the regular
+Every finished game is recorded in this browser (your score, place, accuracy, Coryat score, Daily
+Double and Final Jeopardy! results and wagers, the game) and listed under **High scores** on the
+setup screen and the final screen, with your win rate, average score, average and best Coryat,
+Daily Double and Final Jeopardy! success rates and average wagers. The final screen also has
+**Game dynamics**: everyone's final and Coryat scores with their right/wrong counts, and a chart
+of every player's money after each clue (hover for the numbers), like the archive's own. The **Coryat score** is your money from the regular
 clues alone: wrong responses count against you, a Daily Double counts at its face value when right
 and costs nothing when wrong, and Final Jeopardy! is left out — the usual measure for playing along
 at home. A result edited after the game ends (a Final Jeopardy! call overruled with `y`, or **Edit
@@ -153,7 +161,7 @@ now; sign-in and online play are on the list.
 
 ## The look
 
-The clue screen and the board follow the broadcast: the clue in a Korinna-like serif (Bree Serif),
+The clue screen and the board follow the broadcast: the clue in a Korinna-like serif (Averia Serif Libre),
 white with a hard black shadow, in a narrow column of short lines sized to the screen; the board in
 a compressed grotesque (Anton), white categories and gold values on the show's blue with black
 gutters. Both fonts ship in `fonts/` (SIL Open Font License) and are declared at runtime from the

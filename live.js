@@ -30,8 +30,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         buzzKey: ' ',            // ' ' | 'b' | 'j' | 'k' | 'Shift'
         hostVoice: '',           // voice name; '' = auto
         rate: 1.15,                   // the host's reading speed; shown to the user relative to this (1.15 reads as 1.00×)
-        settingsVersion: 4,
-        answerMode: 'speech',    // speech | typed
+        settingsVersion: 5,
+        answerMode: 'speech',    // speech | typed (follows micMode: 'off' = typed)
+        micMode: 'always',       // 'always' = the mic stays open for the whole game (steadier sound); 'toggle' = opens only while the game listens; 'off' = type your responses
         contestantVoices: true,
         contestantEngine: 'neural',   // 'neural' (studio voices, when the host uses one) or 'system'
         voicePick: true,              // pick clues by voice ("Science for 600") when answering by voice
@@ -158,8 +159,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             // v4: media clues went from "no credit" to "half credit" by default; the old default follows.
             if (!(saved.settingsVersion >= 4)) { if (saved.mediaCredit == null || saved.mediaCredit == 'none') saved.mediaCredit = 'half'; if (saved.mediaCredit == 'broadcast') saved.mediaCredit = 'full'; saved.settingsVersion = 4; }
+            // v5: one Microphone setting (whole game / while listening / off) replaces "How you answer".
+            if (!(saved.settingsVersion >= 5)) { if (saved.micMode == null) saved.micMode = saved.answerMode == 'typed' ? 'off' : 'always'; saved.settingsVersion = 5; }
             S = Object.assign({ }, DEFAULTS, saved);
         } catch (e) { S = Object.assign({ }, DEFAULTS); }
+        S.answerMode = S.micMode == 'off' ? 'typed' : 'speech';
         applyDevices();
     }
     function saveSettings() {
@@ -169,6 +173,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function applyDevices() {
         if (typeof JPEar !== 'undefined' && JPEar.setMicPreference) JPEar.setMicPreference(S.micDevice || 'auto');
         if (JPAudio.setOutput) JPAudio.setOutput(S.outDevice || 'default');
+    }
+    // "Microphone: on for the whole game": the stream is held open from the
+    // first clue to the end, so the input device never starts and stops
+    // mid-game (which is what makes headphones hiccup). Audio is only used
+    // while the game is listening; the rest is discarded. Off between games.
+    function applyMicHold() {
+        if (typeof JPEar === 'undefined' || !JPEar.setHold) return;
+        JPEar.setHold(!!(liveActive && G && G.round && !G.recorded && S.micMode == 'always' && S.answerMode == 'speech'));
     }
 
     // mult scales the median for this particular ring-in (clue difficulty, rebounds).
@@ -326,11 +338,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // ------------------------------------------------------------------ UI
 
     // The show's typefaces ship with the extension: a Korinna-like serif for
-    // the clues (Bree Serif) and a compressed grotesque for the board (Anton).
+    // the clues (Averia Serif Libre Bold: wide, soft, low-contrast letters) and
+    // a compressed grotesque for the board (Anton).
     function installFonts() {
         if (document.getElementById('jp-live-fonts')) return;
         let url = function(f) { try { return chrome.runtime.getURL('fonts/' + f); } catch (e) { return null; } };
-        let clue = url('BreeSerif-Regular.ttf'), board = url('Anton-Regular.ttf');
+        let clue = url('AveriaSerifLibre-Bold.ttf'), board = url('Anton-Regular.ttf');
         if (!clue || !board) return;
         let st = document.createElement('style');
         st.id = 'jp-live-fonts';
@@ -591,7 +604,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function fitClueText() {
         if (!clueEl || !clueTextEl || !clueEl.isConnected || clueEl.dataset.fit != '1') return;
         let strip = clueEl.querySelector('.jp-clue-cat');
-        if (strip) clueEl.style.paddingTop = (strip.offsetHeight + 18) + 'px';   // never under the category strip
+        if (strip) clueEl.style.paddingTop = (strip.offsetHeight + 28) + 'px';   // clear of the category strip (10px in, inside the lights)
         let cs = getComputedStyle(clueEl);
         let padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
         let subH = clueSubEl ? clueSubEl.offsetHeight : 0;
@@ -603,7 +616,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         // the width) in a type size tied to the screen, not to the clue's
         // length. Long clues get a wider column first, then a smaller size;
         // pictures and other extras below the text take from the height.
-        let target = Math.max(18, Math.min(H * 0.09, W * 0.05));   // measured off the broadcast: ~9% of the height, ~5% of the width
+        let target = Math.max(18, Math.min(H * 0.1, W * 0.055));   // measured off the broadcast (~9% of the height), plus a little for this face's smaller capitals
         let fit = function(width) {
             clueTextEl.style.maxWidth = width + 'px';
             clueTextEl.style.width = width + 'px';
@@ -618,8 +631,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             return lo;
         };
-        let size = fit(Math.round(W * 0.43));
-        if (size < target * 0.8) size = fit(Math.round(W * 0.58));
+        let size = fit(Math.round(W * 0.45));
+        if (size < target * 0.8) size = fit(Math.round(W * 0.6));
         if (size < target * 0.65) size = fit(Math.round(W * 0.76));
         clueTextEl.style.fontSize = Math.floor(size) + 'px';
     }
@@ -917,13 +930,15 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<tr><td>Buzz-in key</td><td><select data-s="buzzKey">' +
               [[' ', 'Space'], ['b', 'B'], ['j', 'J'], ['k', 'K'], ['Shift', 'Shift']].map(function(o) { return '<option value="' + esc(o[0]) + '"' + (S.buzzKey == o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
               '</select></td></tr>' +
-            '<tr><td>How you answer</td><td><select data-s="answerMode">' +
-              '<option value="speech"' + (S.answerMode == 'speech' ? ' selected' : '') + (sr ? '' : ' disabled') + '>Speak it (typing also works)' + (sr ? '' : ' — not supported here') + '</option>' +
-              '<option value="typed"' + (S.answerMode == 'typed' ? ' selected' : '') + '>Type it</option></select>' +
+            '<tr><td>Microphone</td><td><select data-s="micMode" style="max-width:100%">' +
+              '<option value="always"' + (S.micMode != 'toggle' && S.micMode != 'off' ? ' selected' : '') + (sr ? '' : ' disabled') + '>On for the whole game — answer out loud; steadiest sound' + (sr ? '' : ' (not supported here)') + '</option>' +
+              '<option value="toggle"' + (S.micMode == 'toggle' ? ' selected' : '') + (sr ? '' : ' disabled') + '>On only while the game listens — answer out loud; the mic light goes off between turns</option>' +
+              '<option value="off"' + (S.micMode == 'off' ? ' selected' : '') + '>Off — type your responses</option></select>' +
               ' <button class="jp-btn jp-secondary jp-mic-test" style="padding:3px 10px;font-size:0.9em">Test microphone</button> <span class="jp-mic-result jp-note"></span>' +
-              '<div style="margin-top:4px"><label><input type="checkbox" data-s="voicePick"' + (S.voicePick ? ' checked' : '') + '>Pick clues by voice too, when you have the board ("Science for 600", "same category, 800"); clicking always works</label></div></td></tr>' +
-            '<tr><td>Microphone</td><td><select class="jp-mic-device" style="max-width:100%"><option value="auto">Automatic</option></select>' +
-              '<div class="jp-mic-device-note jp-note" style="margin-top:3px">Automatic uses the system default, or the built-in microphone when a Bluetooth headset is the default — so your headphones don\'t drop to call quality every time the game listens. (Chrome\'s built-in recognizer always uses the system default microphone.)</div></td></tr>' +
+              '<div class="jp-note" style="margin-top:3px">The mic is only ever listened to when it\'s your turn to speak (after you ring in, on your own board, on your Daily Double); nothing is recorded or sent anywhere by the game. Held open, the input device never starts and stops mid-game, which is what makes headphones hiccup.</div>' +
+              '<div style="margin-top:4px"><label><input type="checkbox" data-s="voicePick"' + (S.voicePick ? ' checked' : '') + '>Pick clues by voice too, when you have the board ("Science for 600", "same category, 800"); clicking always works</label></div>' +
+              '<div style="margin-top:6px">Which microphone: <select class="jp-mic-device" style="max-width:100%"><option value="auto">Automatic</option></select>' +
+              '<div class="jp-mic-device-note jp-note" style="margin-top:3px">Automatic uses the system default, or the built-in microphone when a Bluetooth headset is the default — so your headphones don\'t drop to call quality every time the game listens. (Chrome\'s built-in recognizer always uses the system default microphone.)</div></div></td></tr>' +
             '<tr><td>Recognition</td><td>' + earSection() + '</td></tr>' +
             '<tr><td>Host voice</td><td>' + voiceSection(vopts) + '</td></tr>' +
             '<tr><td>Reading speed</td><td><input type="range" class="jp-rate" min="0.6" max="1.4" step="0.05" value="' + (S.rate / BASE_RATE).toFixed(2) + '"> <span class="jp-rate-val">' + (S.rate / BASE_RATE).toFixed(2) + '×</span></td></tr>' +
@@ -1292,6 +1307,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (key == 'sfx') JPAudio.setEnabled(S.sfx);
                 if (key == 'hostVoice' || key == 'neuralVoice') setupVoices();
                 if (key == 'earSize') refreshEarUI(panel);
+                if (key == 'micMode') { S.answerMode = S.micMode == 'off' ? 'typed' : 'speech'; applyMicHold(); }
                 saveSettings();
             });
         });
@@ -1330,6 +1346,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
 
     function showSetup() {
+        if (G) G.round = '';
+        applyMicHold();                                   // no game running: the mic is let go
         setHeader('Play Live', document.title.replace(/^J! Archive - /, ''), '');
         clearTimer();
         showAnswerStrip(false);
@@ -1374,7 +1392,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // mode: 'pause' | 'settings' | 'results' | 'rewind'
     function swapPauseContents(mode) {
         if (mode === true) mode = 'settings';
-        let inner = h('div', 'jp-panel jp-wide');
+        let inner = h('div', 'jp-panel jp-wide' + (mode == 'pause' ? ' jp-pause-plain' : ''));
         let title = mode == 'settings' ? 'Settings' : mode == 'results' ? 'Edit results' : mode == 'rewind' ? 'Rewind' : 'Paused';
         let body = mode == 'settings' ? settingsForm() + '<p class="jp-note">The game is paused. Changes apply from the next clue.</p>'
                  : mode == 'results' ? resultsForm()
@@ -1485,7 +1503,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         liveActive = true;
         runToken++;
         JPClock.resume();
-        G = { round: '', scores: { }, played: { }, control: null, results: [ ], history: [ ], recorded: null, stats: { buzzWins: 0, buzzLost: 0, lockouts: 0, answered: 0, correct: 0, wrong: 0, clues: 0 } };
+        G = { round: '', scores: { }, played: { }, control: null, results: [ ], cresults: [ ], trajectory: [ ], history: [ ], recorded: null, stats: { buzzWins: 0, buzzLost: 0, lockouts: 0, answered: 0, correct: 0, wrong: 0, clues: 0 } };
         for (let n of realNames()) G.scores[n] = 0;
         G.scores[YOU] = 0;
         document.addEventListener('keydown', onKey, true);
@@ -1504,7 +1522,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         closePauseMenu();
         JPClock.resume();
         document.removeEventListener('keydown', onKey, true);
-        if (typeof JPEar !== 'undefined') JPEar.closeMic();
+        if (typeof JPEar !== 'undefined') { if (JPEar.setHold) JPEar.setHold(false); JPEar.closeMic(); }
         if (U) U.root.style.display = 'none';
     }
 
@@ -1591,12 +1609,16 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.scores[YOU] = 0;
         G.played = { };
         G.results = [ ];
+        G.cresults = [ ];
+        G.trajectory = [ ];
         G.history = [ ];
         G.recorded = null;
         G.stats = { buzzWins: 0, buzzLost: 0, lockouts: 0, answered: 0, correct: 0, wrong: 0, clues: 0 };
         // The returning champion (leftmost podium on J! Archive) picks first.
         G.control = realNames()[0] || YOU;
         renderPodiums();
+        G.round = 'J';
+        applyMicHold();                                   // "on for the whole game": open now, close at the end
         await runGame(tok, 'J', false);
     }
 
@@ -1633,6 +1655,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.history.push({
             round: round, num: num, category: info ? info.category.name : '', value: info ? info.value : 0,
             control: G.control, scores: clone(G.scores), played: clone(G.played), results: clone(G.results || [ ]), stats: clone(G.stats),
+            cresults: clone(G.cresults || [ ]), trajectory: clone(G.trajectory || [ ]),
         });
     }
     // Back to the moment before history entry i: that clue and everything after
@@ -1653,6 +1676,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.control = snap.control;
         G.results = clone(snap.results);
         G.stats = clone(snap.stats);
+        G.cresults = clone(snap.cresults || [ ]);
+        G.trajectory = clone(snap.trajectory || [ ]);
         G.history = G.history.slice(0, i);
         G.current = null;
         renderPodiums();
@@ -1781,6 +1806,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             pushHistory(round, num);
             await playClue(num, tok);
             if (!alive(tok)) return;
+            recordTrajectory(num);
         }
 
         G.phase = 'other';
@@ -2019,7 +2045,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         clearPodiumLines();
         clearOuts();
         lightPodium(null);
-        setHeader(roundTitle(G.round), info.category.name, money(info.value));
+        setHeader(roundTitle(G.round), '', '');            // the clue's own strip carries the category and the value
         JPAudio.play('select');
         await sleep(200, tok);
         if (!alive(tok)) return;
@@ -2112,6 +2138,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 await csay(ev.who, JPReader.responseToSpeech(text.replace(/^\(|\)$/g, '')), tok);
                 if (!alive(tok)) break;
                 let credit = othersCredit(info, info.value);
+                (G.cresults || (G.cresults = [ ])).push({ who: ev.who, num: num, right: ev.right, value: info.value, dd: false });
                 if (ev.right) {
                     adjustScore(ev.who, credit);
                     if (userRec) userRec.othersDelta[ev.who] = credit;
@@ -2293,7 +2320,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let ok = rec.outcome == 'right', none = rec.outcome == 'none';
             let line = '<span class="jp-who">You:</span> ' + (said ? esc(said) : '<i>(no response)</i>') +
                 ' &nbsp; <span class="' + (ok ? 'jp-correct' : 'jp-incorrect') + '">' + (none ? 'No response.' : ok ? esc(pick(HOST_RIGHT)) : esc(pick(HOST_WRONG))) + '</span>' +
-                (ok ? '' : ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>');
+                ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>';   // shown either way: check the judge, and learn the exact wording
             setSub(line);
             podiumLine(YOU, '<span class="' + (ok ? 'jp-correct' : 'jp-incorrect') + '">' + (said ? esc(said) : '(no response)') + '</span>');
         }
@@ -2402,7 +2429,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await pause(500, tok);
             if (!alive(tok)) return;
         }
-        setHeader(roundTitle(G.round), info.category.name, 'DD ' + money(wager));
+        setHeader(roundTitle(G.round), '', '');
         podiumLine(who, 'wagers ' + money(wager));
         let trueDD = wager == G.scores[who] && wager > 0;
         await say((trueDD ? 'A true Daily Double! ' : money(wager) + '. ') + 'All right, here\'s the clue.', tok);
@@ -2435,6 +2462,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await csay(who, JPReader.responseToSpeech(text.replace(/^\(|\)$/g, '')), tok);
             if (!alive(tok)) return;
             let ddCredit = othersCredit(info, wager);
+            (G.cresults || (G.cresults = [ ])).push({ who: who, num: info.num, right: right, value: info.value, dd: true });
             adjustScore(who, right ? ddCredit : -ddCredit);
             setSub('<span class="jp-who">' + esc(who) + ':</span> ' + esc(text) + ' &nbsp; <span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(right ? pick(HOST_RIGHT) : pick(HOST_WRONG)) + '</span>' +
                    (right ? '' : ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>') + creditNote(ddCredit, wager));
@@ -2584,6 +2612,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (!alive(tok)) return;
         }
         lightPodium(null);
+        (G.trajectory || (G.trajectory = [ ])).push({ num: null, round: 'FJ', label: 'Final Jeopardy!', scores: clone(G.scores) });
         // The verdict.
         let all = ranked(G.scores);
         let top = all.filter(function(n) { return G.scores[n] == G.scores[all[0]]; });
@@ -2715,18 +2744,31 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // clue's value, wrong ones take it away; a Daily Double counts at the clue's
     // face value when right and costs nothing when wrong; Final Jeopardy! is
     // left out. The standard yardstick for playing along at home.
-    function coryatScore() {
+    function coryatScore(who) {
         let c = 0;
-        for (let r of G.results) {
-            if (r.kind == 'clue') c += r.outcome == 'right' ? r.value : r.outcome == 'wrong' ? -r.value : 0;
-            else if (r.kind == 'dd' && r.outcome == 'right') c += r.value;
+        if (!who || who == YOU) {
+            for (let r of G.results) {
+                if (r.kind == 'clue') c += r.outcome == 'right' ? r.value : r.outcome == 'wrong' ? -r.value : 0;
+                else if (r.kind == 'dd' && r.outcome == 'right') c += r.value;
+            }
+        } else {
+            for (let r of (G.cresults || [ ])) if (r.who == who) c += r.dd ? (r.right ? r.value : 0) : (r.right ? r.value : -r.value);
         }
         return c;
     }
+    // The score of every player after each clue, for the game-dynamics chart.
+    function recordTrajectory(num) {
+        if (!G.trajectory) G.trajectory = [ ];
+        let info = null; try { info = clueInfo(num); } catch (e) { }
+        G.trajectory.push({ num: num, round: G.round, label: info ? info.category.name + ' ' + money(info.value) + (info.dd ? ' (DD)' : '') : String(num), scores: clone(G.scores) });
+    }
     function gameEntry(base) {
         let st = G.stats, names = ranked(G.scores);
+        let dds = G.results.filter(function(r) { return r.kind == 'dd'; }), fj = G.results.find(function(r) { return r.kind == 'fj'; });
         return Object.assign(base || { }, {
             score: G.scores[YOU], place: names.indexOf(YOU) + 1, won: names[0] == YOU && G.scores[YOU] > 0, coryat: coryatScore(),
+            dd: { n: dds.length, right: dds.filter(function(r) { return r.outcome == 'right'; }).length, wagers: dds.reduce(function(a, r) { return a + (r.amount || 0); }, 0) },
+            fj: fj ? { played: 1, right: fj.outcome == 'right' ? 1 : 0, wager: fj.amount || 0 } : { played: 0, right: 0, wager: 0 },
             answered: st.answered, correct: st.correct, clues: st.clues, buzzWins: st.buzzWins,
             difficulty: S.difficulty, contestants: realNames().map(function(n) { return { name: n, score: G.scores[n] }; }),
         });
@@ -2751,9 +2793,96 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let games = list.length, wins = list.filter(function(e) { return e.won; }).length;
         let avg = function(f) { let xs = list.map(f).filter(function(x) { return typeof x == 'number' && !isNaN(x); }); return xs.length ? Math.round(xs.reduce(function(a, b) { return a + b; }, 0) / xs.length) : null; };
         let withCoryat = list.filter(function(e) { return typeof e.coryat == 'number'; });
+        let dd = { n: 0, right: 0, wagers: 0 }, fj = { played: 0, right: 0, wager: 0 };
+        for (let e of list) { if (e.dd) { dd.n += e.dd.n; dd.right += e.dd.right; dd.wagers += e.dd.wagers; } if (e.fj) { fj.played += e.fj.played; fj.right += e.fj.right; fj.wager += e.fj.wager; } }
         return { games: games, wins: wins, winRate: games ? Math.round(100 * wins / games) : 0, avgScore: avg(function(e) { return e.score; }), avgCoryat: avg(function(e) { return e.coryat; }),
-                 bestCoryat: withCoryat.length ? Math.max.apply(null, withCoryat.map(function(e) { return e.coryat; })) : null, coryatGames: withCoryat.length };
+                 bestCoryat: withCoryat.length ? Math.max.apply(null, withCoryat.map(function(e) { return e.coryat; })) : null, coryatGames: withCoryat.length,
+                 ddRate: dd.n ? Math.round(100 * dd.right / dd.n) : null, ddAvg: dd.n ? Math.round(dd.wagers / dd.n) : null, ddN: dd.n,
+                 fjRate: fj.played ? Math.round(100 * fj.right / fj.played) : null, fjAvg: fj.played ? Math.round(fj.wager / fj.played) : null, fjN: fj.played };
     }
+    // ---- game dynamics: every player's score after each clue, and Coryat for all ----
+    const PLAYER_COLORS = [ '#2E8FC4', '#C75E9A', '#4FA347' ];   // contestants, in podium order (validated for CVD on the panel's blue)
+    const YOU_COLOR = '#D9A520';
+    function playerColor(who) { if (who == YOU) return YOU_COLOR; let i = realNames().indexOf(who); return PLAYER_COLORS[Math.max(0, i) % PLAYER_COLORS.length]; }
+    function dynamicsHtml() {
+        let names = realNames().concat([ YOU ]);
+        let traj = (G.trajectory || [ ]).slice();
+        // The table: final score, Coryat, right/wrong on regular clues, Daily Doubles.
+        let rows = ranked(G.scores).map(function(who) {
+            let right = 0, wrong = 0, ddN = 0, ddRight = 0;
+            if (who == YOU) { for (let r of G.results) { if (r.kind == 'clue') { if (r.outcome == 'right') right++; else if (r.outcome == 'wrong') wrong++; } else if (r.kind == 'dd') { ddN++; if (r.outcome == 'right') ddRight++; } } }
+            else for (let r of (G.cresults || [ ])) if (r.who == who) { if (r.dd) { ddN++; if (r.right) ddRight++; } else if (r.right) right++; else wrong++; }
+            return '<tr' + (who == YOU ? ' class="jp-you"' : '') + '><td><span class="jp-swatch" style="background:' + playerColor(who) + '"></span>' + esc(who) + '</td><td class="jp-num">' + money(G.scores[who]) + '</td><td class="jp-num">' + money(coryatScore(who)) + '</td>' +
+                   '<td class="jp-num">' + right + ' / ' + wrong + '</td><td class="jp-num">' + (ddN ? ddRight + ' of ' + ddN : '—') + '</td></tr>';
+        }).join('');
+        let table = '<table class="jp-results jp-dyn"><tr><th>Player</th><th>Final</th><th>Coryat</th><th>Right / wrong</th><th>Daily Doubles</th></tr>' + rows + '</table>';
+        if (traj.length < 2) return '<h2>Game dynamics</h2>' + table;
+        // The chart.
+        let W = 900, H = 300, L = 62, R = 118, T = 14, B = 34;
+        let pts = [ { label: 'Start', round: traj[0].round, scores: { } } ].concat(traj);
+        names.forEach(function(nm) { pts[0].scores[nm] = 0; });
+        pts[pts.length - 1] = Object.assign({ }, pts[pts.length - 1], { scores: clone(G.scores) });   // the end of the line is the standings as they are now (edits included)
+        let lo = 0, hi = 1000;
+        for (let p of pts) for (let nm of names) { let v = p.scores[nm] || 0; if (v < lo) lo = v; if (v > hi) hi = v; }
+        let span = hi - lo, step = span > 40000 ? 10000 : span > 16000 ? 5000 : span > 6000 ? 2000 : 1000;
+        lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step; if (hi == lo) hi = lo + step;
+        let X = function(i) { return L + (W - L - R) * i / (pts.length - 1); };
+        let Y = function(v) { return T + (H - T - B) * (hi - v) / (hi - lo); };
+        let svg = '<svg class="jp-dyn-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Scores after each clue">';
+        // grid + y labels
+        for (let v = lo; v <= hi; v += step) {
+            svg += '<line x1="' + L + '" y1="' + Y(v) + '" x2="' + (W - R) + '" y2="' + Y(v) + '" stroke="' + (v == 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.12)') + '" stroke-width="1"/>';
+            svg += '<text x="' + (L - 8) + '" y="' + (Y(v) + 4) + '" text-anchor="end" class="jp-dyn-tick">' + (v ? money(v) : '$0') + '</text>';
+        }
+        // round boundaries
+        let bounds = [ ];
+        for (let i = 1; i < pts.length; i++) if (pts[i].round != pts[i - 1].round) bounds.push(i);
+        let starts = [ 1 ].concat(bounds);
+        for (let k = 0; k < starts.length; k++) {
+            let i0 = starts[k], i1 = k + 1 < starts.length ? starts[k + 1] : pts.length;
+            let r = pts[i0] ? pts[i0].round : '';
+            let mid = (X(i0 - 1) + X(i1 - 1)) / 2;
+            svg += '<text x="' + mid + '" y="' + (H - 10) + '" text-anchor="middle" class="jp-dyn-round">' + esc(r == 'J' ? 'Jeopardy!' : r == 'DJ' ? 'Double Jeopardy!' : r == 'FJ' ? 'Final' : r) + '</text>';
+            if (k) svg += '<line x1="' + X(i0 - 1) + '" y1="' + T + '" x2="' + X(i0 - 1) + '" y2="' + (H - B) + '" stroke="rgba(255,255,255,0.35)" stroke-dasharray="4 4"/>';
+        }
+        // lines
+        for (let nm of names) {
+            let d = pts.map(function(p, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(p.scores[nm] || 0).toFixed(1); }).join(' ');
+            svg += '<path d="' + d + '" fill="none" stroke="' + playerColor(nm) + '" stroke-width="' + (nm == YOU ? 3 : 2) + '" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
+        }
+        // direct labels at the line ends, nudged apart
+        let ends = names.map(function(nm) { return { nm: nm, y: Y(pts[pts.length - 1].scores[nm] || 0) }; }).sort(function(a, b) { return a.y - b.y; });
+        for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 15) ends[i].y = ends[i - 1].y + 15;
+        for (let e of ends) svg += '<text x="' + (W - R + 10) + '" y="' + (e.y + 4) + '" class="jp-dyn-label" fill="' + playerColor(e.nm) + '">' + esc(e.nm) + ' ' + money(pts[pts.length - 1].scores[e.nm] || 0) + '</text>';
+        svg += '<line class="jp-dyn-cursor" x1="0" y1="' + T + '" x2="0" y2="' + (H - B) + '" stroke="#fff" stroke-width="1" style="display:none"/>';
+        svg += '<rect class="jp-dyn-hit" x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '" fill="transparent"/>';
+        svg += '</svg>';
+        let json = esc(JSON.stringify({ names: names, pts: pts.map(function(p) { return { label: p.label, scores: p.scores }; }), L: L, R: R, W: W }));
+        return '<h2>Game dynamics</h2>' + table + '<div class="jp-dyn-wrap" data-dyn="' + json + '">' + svg + '<div class="jp-dyn-tip" style="display:none"></div></div>' +
+               '<p class="jp-note">Every player\'s money after each clue. Coryat counts the regular clues only (a Daily Double at face value when right, nothing when wrong; no Final).</p>';
+    }
+    function bindDynamics(panel) {
+        let wrap = panel.querySelector('.jp-dyn-wrap');
+        if (!wrap) return;
+        let data = JSON.parse(wrap.dataset.dyn), svg = wrap.querySelector('svg'), tip = wrap.querySelector('.jp-dyn-tip'), cur = wrap.querySelector('.jp-dyn-cursor'), hit = wrap.querySelector('.jp-dyn-hit');
+        let n = data.pts.length;
+        function at(ev) {
+            let box = svg.getBoundingClientRect();
+            let x = (ev.clientX - box.left) / box.width * data.W;
+            let i = Math.round((x - data.L) / (data.W - data.L - data.R) * (n - 1));
+            i = Math.max(0, Math.min(n - 1, i));
+            let p = data.pts[i];
+            cur.setAttribute('x1', data.L + (data.W - data.L - data.R) * i / (n - 1)); cur.setAttribute('x2', cur.getAttribute('x1')); cur.style.display = '';
+            tip.innerHTML = '<b>' + esc(i ? (i + '. ' + p.label) : 'Start') + '</b>' + data.names.map(function(nm) { return '<div><span class="jp-swatch" style="background:' + playerColor(nm) + '"></span>' + esc(nm) + ' <span class="jp-num">' + money(p.scores[nm] || 0) + '</span></div>'; }).join('');
+            tip.style.display = '';
+            let px = (ev.clientX - box.left), flip = px > box.width * 0.6;
+            tip.style.left = flip ? '' : (px + 14) + 'px'; tip.style.right = flip ? (box.width - px + 14) + 'px' : '';
+            tip.style.top = Math.max(0, ev.clientY - box.top - 10) + 'px';
+        }
+        hit.addEventListener('mousemove', at);
+        hit.addEventListener('mouseleave', function() { tip.style.display = 'none'; cur.style.display = 'none'; });
+    }
+
     function scoresPanelHtml(currentId) {
         let list = loadScores().slice().sort(function(a, b) { return b.score - a.score || (a.date < b.date ? 1 : -1); });
         if (!list.length) return '<p class="jp-note">No games finished yet. Finish one and it lands here.</p>';
@@ -2765,7 +2894,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         }).join('');
         return '<table class="jp-stats"><tr><td><b>' + games + '</b><span>game' + (games == 1 ? '' : 's') + '</span></td><td><b>' + t.winRate + '%</b><span>win rate (' + t.wins + ' won)</span></td>' +
                '<td><b>' + money(t.avgScore || 0) + '</b><span>average score</span></td><td><b>' + (t.avgCoryat == null ? '—' : money(t.avgCoryat)) + '</b><span>average Coryat</span></td>' +
-               '<td><b>' + money(best.score) + '</b><span>best score</span></td><td><b>' + (t.bestCoryat == null ? '—' : money(t.bestCoryat)) + '</b><span>best Coryat</span></td></tr></table>' +
+               '<td><b>' + money(best.score) + '</b><span>best score</span></td><td><b>' + (t.bestCoryat == null ? '—' : money(t.bestCoryat)) + '</b><span>best Coryat</span></td></tr>' +
+               '<tr><td><b>' + (t.ddRate == null ? '—' : t.ddRate + '%') + '</b><span>Daily Doubles right (' + t.ddN + ')</span></td><td><b>' + (t.ddAvg == null ? '—' : money(t.ddAvg)) + '</b><span>average DD wager</span></td>' +
+               '<td><b>' + (t.fjRate == null ? '—' : t.fjRate + '%') + '</b><span>Final Jeopardy! right (' + t.fjN + ')</span></td><td><b>' + (t.fjAvg == null ? '—' : money(t.fjAvg)) + '</b><span>average Final wager</span></td><td></td><td></td></tr></table>' +
             '<table class="jp-results jp-scores"><tr><th>#</th><th>Game</th><th>Date</th><th>Your score</th><th>Coryat</th><th>Result</th><th>Responses</th></tr>' + rows + '</table>' +
             (games > 25 ? '<p class="jp-note">Top 25 of ' + games + '.</p>' : '') +
             '<p class="jp-note">Coryat: your money from the regular clues alone — wrong responses count against you, a Daily Double counts at its face value when right and costs nothing when wrong, and Final Jeopardy! is left out. The usual measure for playing along at home.</p>';
@@ -2789,6 +2920,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let acc = st.answered ? Math.round(100 * st.correct / st.answered) : 0;
         let entry = recordScore();
         refreshRecord();                                  // results may have been edited since the game ended
+        applyMicHold();                                   // the game is over: let the mic go
         let all = loadScores().slice().sort(function(a, b) { return b.score - a.score; });
         let rank = all.findIndex(function(e) { return e.id == entry.id; }) + 1;
         let t = statsSummary(all);
@@ -2798,6 +2930,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<p>Responses: ' + st.answered + ' · correct: ' + st.correct + ' · incorrect: ' + st.wrong + ' · accuracy: ' + acc + '% · Coryat score: <b>' + money(coryatScore()) + '</b>' + (t.avgCoryat != null && all.length > 1 ? ' <span class="jp-note">(your average: ' + money(t.avgCoryat) + ')</span>' : '') + '</p>' +
             '<p>' + (rank == 1 && all.length > 1 ? '<b>A new high score!</b> ' : '') + 'This game ranks #' + rank + ' of ' + all.length + ' on this computer' + (all.length > 1 ? ' · win rate ' + t.winRate + '%' : '') + '. <button class="jp-btn jp-secondary jp-scores" style="padding:3px 10px;font-size:0.9em">High scores</button> ' +
             '<button class="jp-btn jp-secondary jp-edit-results" style="padding:3px 10px;font-size:0.9em">Edit results</button> <span class="jp-note">(a call the judge got wrong — Final Jeopardy! included — changes the standings and the saved game)</span></p>' +
+            dynamicsHtml() +
             '<p>' + (nextGameLink() ? '<button class="jp-btn jp-next">Play the next game &rarr;</button> ' : '') +
             '<button class="jp-btn' + (nextGameLink() ? ' jp-secondary' : '') + ' jp-again">Play this game again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button></p>' +
             (nextGameLink() ? '<p class="jp-note">The next game in the archive (the day after this one) opens ready to start, with these settings.</p>'
@@ -2806,6 +2939,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (nx) nx.onclick = function() { goToNextGame(); };
         U.stage.querySelector('.jp-scores').onclick = function() { showScores(showFinalStandings); };
         U.stage.querySelector('.jp-edit-results').onclick = function() { showPauseMenu(); swapPauseContents('results'); };
+        bindDynamics(U.stage);
         U.stage.querySelector('.jp-again').onclick = function() { showSetup(); };
         U.stage.querySelector('.jp-close').onclick = function() { quitLive(); };
         setHint('');

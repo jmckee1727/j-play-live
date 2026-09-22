@@ -1,0 +1,20 @@
+/* played.css -- marks on J! Archive pages for games you've played, and the continue panel */
+.jp-played-badge { color: #b8860b; font-weight: bold; margin-left: 4px; cursor: default; font-size: 0.95em; }
+.jp-played-note { display: inline-block; margin: 0 8px; color: #b8860b; font-weight: bold; vertical-align: middle; }
+.jp-continue {
+    position: fixed; right: 16px; bottom: 16px; z-index: 2147482000;
+    max-width: 320px; padding: 10px 12px 12px; border-radius: 8px;
+    background: #071277; color: #fff; border: 2px solid #D69F4C;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    font: 14px/1.4 "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.jp-continue b { color: #fff; }
+.jp-continue-head { display: flex; justify-content: space-between; align-items: center; color: #D69F4C; font-weight: bold; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+.jp-continue-x { background: none; border: 0; color: #D69F4C; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.jp-continue-last { opacity: 0.9; margin-top: 2px; }
+.jp-continue-actions { margin-top: 8px; }
+.jp-continue-go {
+    display: inline-block; background: #D69F4C; color: #071277; font-weight: bold; text-decoration: none;
+    padding: 5px 12px; border-radius: 4px; border: 0; cursor: pointer; font-size: 14px; font-family: inherit;
+}
+.jp-continue-go:hover { background: #f0b85e; }

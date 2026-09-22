@@ -49,6 +49,10 @@ Once the store listing is live, add the store link to the page and tell people t
   shouldn't be monetized (the archive's terms prohibit that).
 - **Sounds.** Ship only the built-in synthesized cues and the original think tune. Don't bundle
   the show's actual music or sound effects.
+- **Permissions.** Since 0.10.0 the extension runs a small script (`played.js`) on every
+  j-archive.com page, not only game pages, and uses the `storage` permission. Chrome's permission
+  warning is per host, so this reads the same to users as before ("read and change your data on
+  j-archive.com"); the privacy policy and the listing's "runs only on…" line say what it does there.
 - **The speech model** is downloaded from Hugging Face at runtime, which the store allows
   (weights are data, not code). Keep `host_permissions` for `huggingface.co` and `*.hf.co`.
 - **Licenses.** `vendor/NOTICE.txt` lists the bundled open-source components (Apache 2.0 and

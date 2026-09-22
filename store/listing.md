@@ -18,7 +18,9 @@ Open a game page on j-archive.com, click ▶ Play Live, and the host reads each 
 
 • A studio-quality host voice that runs entirely on your computer (a one-time download; nothing is sent anywhere), or your system's built-in voices.
 • Speech recognition that runs on your computer too (the open-source Whisper model, a one-time download), consistent and private; Chrome's built-in recognizer is the alternative.
-• High scores, kept on your computer.
+• High scores and statistics, kept on your computer: win rate, Coryat scores, Daily Double and Final Jeopardy! results, streaks.
+• Play together on one keyboard: two or three of you, each with your own ring-in key (one on the mouse), with the original contestants or without them — up to six podiums, and a saved game for everyone.
+• Games you've played get a ✓ in the archive's lists, and a small panel on every archive page offers the next game after the last one you played.
 • The host reads the categories at the start of each round, the way the show does.
 • Daily Doubles and Final Jeopardy! with wagering, including the game-theory-savvy wagers the contestants make against the live standings.
 • Responses judged leniently, like the show ("what is" optional, surnames accepted, typos and mis-hearings forgiven), with y/n to overrule.
@@ -32,7 +34,7 @@ Open a game page on j-archive.com, click ▶ Play Live, and the host reads each 
 
 Built on the open-source j-play extension by Wayne Davison, whose "review" mode is still included.
 
-This extension only runs on j-archive.com game pages and modifies them locally in your browser. It collects no data. Speech recognition, if you answer by voice, runs on your computer once the studio ear is downloaded; until then Chrome's built-in service is used, which processes audio through Google. The studio voice downloads the open-source Kokoro speech model from Hugging Face once and caches it locally.
+This extension only runs on j-archive.com pages (the game on game pages; on the rest of the site it only marks the games you have played) and modifies them locally in your browser. It collects no data. Speech recognition, if you answer by voice, runs on your computer once the studio ear is downloaded; until then Chrome's built-in service is used, which processes audio through Google. The studio voice downloads the open-source Kokoro speech model from Hugging Face once and caches it locally.
 
 Not affiliated with Jeopardy Productions, Sony Pictures Television, or the J! Archive. Jeopardy! is a trademark of Jeopardy Productions, Inc.
 

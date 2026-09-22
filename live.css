@@ -343,3 +343,15 @@ table.jp-rewind td.jp-rw-scores { font-size: 0.85em; }
 .jp-stats td b { display: block; font-size: 1.35em; color: gold; }
 .jp-stats td span { font-size: 0.8em; opacity: 0.85; }
 .jp-stats td:empty { background: none; }
+
+/* players (settings) */
+.jp-player-row { margin: 4px 0; }
+.jp-player-row .jp-pname { width: 10em; margin-right: 6px; }
+.jp-btn.jp-key-btn.jp-on { background: gold; color: #071277; }
+.jp-btn.jp-on { background: gold; color: #071277; border-color: gold; }
+#jp_live a.jp-link { color: gold; }
+.jp-player-pick { margin: 0 0 8px; }
+.jp-podiums.jp-many .jp-podium .jp-pname { font-size: 1.25em; }
+.jp-podiums.jp-many .jp-podium .jp-pscore { font-size: 1.6em; min-width: 5em; padding: 2px 6px; }
+.jp-podiums.jp-many .jp-podium { padding: 22px 4px 6px; }
+.jp-podiums.jp-many { gap: 10px; }

@@ -2,11 +2,11 @@
 
 *Last updated: September 21, 2026*
 
-J-Play Live is a browser extension that lets you play along with archived game shows on the J! Archive website (j-archive.com). It runs only on j-archive.com game pages.
+J-Play Live is a browser extension that lets you play along with archived game shows on the J! Archive website (j-archive.com). It runs only on j-archive.com pages: the game itself on game pages, and on the rest of the site only to mark the games you have already played.
 
 ## What the extension collects
 
-Nothing. The extension does not collect, store, or transmit any personal information, browsing history, or gameplay data. Your settings (difficulty, voice choice, and similar) are saved in your browser's local storage for j-archive.com and never leave your computer.
+Nothing. The extension does not collect, store, or transmit any personal information, browsing history, or gameplay data. Your settings (difficulty, voice choice, player names and keys, and similar) and your results (the scores of games you finish, and which games you have played) are saved in your browser's local storage for j-archive.com and in the extension's own storage on your computer, and never leave it. They are used only to show you your high scores and statistics and to mark the games you have played on the archive's pages.
 
 ## Network activity
 
@@ -19,7 +19,8 @@ The extension does not contact any server of its own. There is no analytics, adv
 
 ## Permissions
 
-- **Access to j-archive.com game pages:** to add the game to those pages.
+- **Access to j-archive.com pages:** to add the game to game pages, and to mark the games you have played in the site's lists.
+- **Storage:** to keep your results on your computer.
 - **Offscreen documents:** to run the speech model in a hidden extension page.
 - **huggingface.co / hf.co:** to download the speech model at your request.
 

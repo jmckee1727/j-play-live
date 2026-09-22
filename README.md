@@ -102,7 +102,7 @@ when it is loaded.
 
 | Key | Action |
 | --- | --- |
-| `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. |
+| `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. With several players, each has their own key (see **Playing together**). |
 | `Enter` | Lock in a typed response or a wager (also moves on). A Daily Double wager can be spoken instead ("twelve hundred", "all of it"); a Final Jeopardy! wager is typed. Clicks outside the wager box confirm nothing. |
 | `Space` or a click during the Final Jeopardy! music | Ring in to respond: the music ducks, the mic opens, and your first phrase is locked in. (Typing works throughout; with the box empty, Space rings in.) |
 | `y` / `n` | Overrule the judge on your last response (until the next clue). The correct response is shown after every verdict, right or wrong, so you can check the call and learn the exact wording. The money, the rebound and control of the board all follow. |
@@ -126,7 +126,8 @@ are the archived ones. The category is shown across the top of every clue.
 
 | File | What it does |
 | --- | --- |
-| `manifest.json` | Extension manifest (MV3). Runs on `j-archive.com/showgame*` pages. |
+| `manifest.json` | Extension manifest (MV3). The game runs on `j-archive.com/showgame*` pages; `played.js` on every `j-archive.com` page. |
+| `played.js`, `played.css` | `JPPlayed`: the games you've finished (extension storage), the `✓` marks on the archive's lists, the note on a played game's page and the "pick up where you left off" panel. |
 | `archive.js` | The original j-play code: scrapes the page into `clues[]` (indexed by broadcast order), parses responses, and provides the review mode. Small additions are marked `j-play-live`. |
 | `clock.js` | `JPClock`: a pausable game clock. Every game timer runs on it, which is what makes Pause freeze the game mid-clue. |
 | `audio.js` | `JPAudio`: text-to-speech (`speak`), sound effects (`play`, with `sounds/` overrides), speech recognition (`listen`). |
@@ -145,12 +146,36 @@ are the archived ones. The category is shown across the top of every clue.
 | `stylecontent.css` | Original j-play styling for the review mode. |
 | `sounds/` | Optional sound files (see below). |
 
+## Playing together (offline multiplayer)
+
+Under **Players** in Settings, choose **Two of us** or **Three of us**. Each person gets a name
+and a ring-in key — click the key button and press any key (`y`, `n`, `Enter` and `Esc` are taken
+by the game) — and one of you can ring in with the mouse as well. **Play against the archive's
+contestants too** is on by default, so a game can have up to six podiums; switch it off and it's
+just the people at the keyboard, every clue yours to fight over. You all share the one screen,
+keyboard and microphone: whoever wins the buzz answers out loud (or types), a miss lets the others
+ring in, whoever is right picks the next clue and plays the Daily Doubles they land on, and in Final
+Jeopardy! everyone wagers in turn (the others look away), thinks through the music together, then
+responds in turn. Every player gets their own saved game, and their own stats under **High scores**.
+
+## Picking up where you left off
+
+Once you've finished a game, every J! Archive page marks it: a gold `✓` after its link in the
+season lists (hover for the date and your score), and a note next to **Play Live** on the game's own
+page. A small **J-Play Live** panel in the corner of every archive page offers the next game after
+the last one you played — one click opens it ready to start, with your settings. (If the game you
+finished was the newest in the archive, the panel takes you through it to whatever comes next once
+it exists.) The list lives in the extension's own storage on this computer; the `×` hides the panel
+for the rest of the browser session.
+
 ## High scores and statistics
 
 Every finished game is recorded in this browser (your score, place, accuracy, Coryat score, Daily
 Double and Final Jeopardy! results and wagers, the game) and listed under **High scores** on the
 setup screen and the final screen, with your win rate, average score, average and best Coryat,
-Daily Double and Final Jeopardy! success rates and average wagers. The final screen also has
+Daily Double and Final Jeopardy! success rates and average wagers, and your **streaks**: games won
+in a row and days played in a row (both current and best). In a multiplayer game each player has
+their own entries, chosen by name at the top of the list. The final screen also has
 **Game dynamics**: everyone's final and Coryat scores with their right/wrong counts, and a chart
 of every player's money after each clue (hover for the numbers), like the archive's own. The **Coryat score** is your money from the regular
 clues alone: wrong responses count against you, a Daily Double counts at its face value when right

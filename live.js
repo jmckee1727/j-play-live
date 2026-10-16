@@ -455,7 +455,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
 
     function setHeader(round, cat, val) {
-        U.round.textContent = round || '';
+        U.round.textContent = String(round || '').replace(/ Round$/, '');
         U.cat.textContent = cat || '';
         U.val.textContent = val || '';
     }
@@ -556,8 +556,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let kinds = { };
         for (let it of r.items) { if (it.ok && it.el) placeMedia(it, opts); else kinds[it.kind] = true; }
         if (r.missing) {
+            // A strip at the foot of the clue, where every clue keeps room for it: you should know before you ring in.
             let what = r.missing == r.total ? (kinds.image && !kinds.audio && !kinds.video ? 'picture' : kinds.audio && !kinds.image && !kinds.video ? 'audio' : kinds.video && !kinds.image && !kinds.audio ? 'video' : 'media') : 'rest of the media';
-            box.appendChild(h('div', 'jp-clue-nomedia', '(the archive doesn\'t have this clue\'s ' + what + (r.missing > 1 && r.missing == r.total ? ' — ' + r.missing + ' files' : '') + ')'));
+            let credit = S.mediaCredit == 'none' ? 'the contestants get no credit for it' : S.mediaCredit == 'full' ? 'scored as on TV' : 'the contestants get half credit for it';
+            let old = clueEl.querySelector('.jp-clue-nomedia'); if (old) old.remove();
+            clueEl.appendChild(h('div', 'jp-clue-nomedia', '<span class="jp-clue-nomedia-head">Media clue</span> <span class="jp-clue-nomedia-what">the archive doesn\'t have its ' + esc(what) + (r.missing > 1 && r.missing == r.total ? ' (' + r.missing + ' files)' : '') + ' — ' + credit + '</span>'));
         }
         if (!box.childNodes.length) { clueMediaEl = null; return; }
         clueEl.insertBefore(box, clueSubEl);

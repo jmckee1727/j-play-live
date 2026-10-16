@@ -1114,6 +1114,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '</div></div>';
     }
 
+    // The Host voice row, with the studio voice's status and download, into view.
+    function scrollToVoice(panel) {
+        let sec = panel.querySelector('.jp-voice:not(.jp-ear)');
+        if (!sec) return;
+        let row = sec.closest('tr') || sec;
+        try { row.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { row.scrollIntoView(); }
+    }
     function fmtMB(bytes) { return (bytes / 1048576).toFixed(0) + ' MB'; }
 
     // ---- the studio ear (on-device speech recognition) -----------------------
@@ -1238,11 +1245,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
 
     function refreshNeuralUI(panel) {
-        panel.querySelectorAll('.jp-voice').forEach(function(sec) {
+        panel.querySelectorAll('.jp-voice:not(.jp-ear)').forEach(function(sec) {
             let status = sec.querySelector('.jp-neural-status');
             if (status) status.textContent = neuralStatusText();
             let st = JPNeural.state;
-            let bar = sec.querySelector('.jp-neural-bar'), fill = sec.querySelector('.jp-neural-fill');
+            let bar = sec.querySelector('.jp-neural-bar:not(.jp-ear-bar)'), fill = sec.querySelector('.jp-neural-fill:not(.jp-ear-fill)');
             if (bar) {
                 let p = st.progress;
                 bar.style.display = st.loading && p && p.total ? 'block' : 'none';
@@ -1388,7 +1395,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             r.addEventListener('change', function() {
                 if (!r.checked) return;
                 S.voiceEngine = r.value; saveSettings();
-                if (r.value == 'neural' && !JPNeural.ready) neuralCheck(panel);
+                if (r.value == 'neural' && !JPNeural.ready) { neuralCheck(panel); scrollToVoice(panel); }
             });
         });
         panel.querySelectorAll('input[name="jp-ear"]').forEach(function(r) {
@@ -1487,7 +1494,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         showAnswerStrip(false);
         let names = realNames();
         let onboarding = (!S.onboardedVoice && neuralAvailableHere())
-            ? '<div class="jp-onboard"><b>New: a studio-quality host voice.</b> The host can now speak with a natural voice that runs entirely on your computer — free, no account, nothing sent anywhere. It\'s a one-time download (about 90–330 MB depending on your hardware). Click <b>Check my computer</b> under Host voice to see if yours can run it, then <b>Download</b>. The system voice keeps working either way. <button class="jp-btn jp-secondary jp-onboard-ok" style="padding:2px 10px;font-size:0.9em;margin-left:8px">Got it</button></div>'
+            ? '<div class="jp-onboard"><b>New: a studio-quality host voice.</b> The host can now speak with a natural voice that runs entirely on your computer — free, no account, nothing sent anywhere. It\'s a one-time download (about 90–330 MB depending on your hardware). Click <b>Check my computer</b> under <a href="#" class="jp-link jp-go-voice">Host voice</a> to see if yours can run it, then <b>Download</b>. The system voice keeps working either way. <button class="jp-btn jp-secondary jp-onboard-ok" style="padding:2px 10px;font-size:0.9em;margin-left:8px">Got it</button></div>'
             : '';
         let panel = showPanel(
             '<h1>Play Live</h1>' + onboarding + '<div class="jp-online-slot"></div>' +
@@ -1511,6 +1518,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                           (nextGameLink() ? 'The <a href="' + esc(nextGameLink().href.replace(/#.*$/, '')) + '#jplive-next" class="jp-link">next game</a> is a click away.' : '');
             panel.querySelector('h1').insertAdjacentElement('afterend', p);
         });
+        let gv = panel.querySelector('.jp-go-voice');
+        if (gv) gv.onclick = function(e) { e.preventDefault(); scrollToVoice(panel); };
         let ob = panel.querySelector('.jp-onboard-ok');
         if (ob) ob.onclick = function() { S.onboardedVoice = true; saveSettings(); ob.parentElement.remove(); };
         panel.querySelector('.jp-start').onclick = function() { startGame(); };
@@ -2141,10 +2150,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         for (let i = 0; i < 6; i++) {
             let has = nums.some(function(n) { let p = position(n); return p && p.catIdx == catIdx + i; });
             if (!has) { scores.push(0); continue; }
-            let words = categoryWords(categoryInfo(catIdx + i).name);
+            let name = categoryInfo(catIdx + i).name, words = categoryWords(name);
             let hits = 0;
             for (let w of words) if (said.some(function(x) { return sameWord(x, w); })) hits++;
-            scores.push(words.length ? hits / Math.min(words.length, 3) + hits * 0.01 : 0);
+            let phrase = normalizeSpeech(name), spoken = normalizeSpeech(JPReader.categoryToSpeech(name));
+            let whole = (phrase && (' ' + t + ' ').indexOf(' ' + phrase + ' ') >= 0) || (spoken && (' ' + t + ' ').indexOf(' ' + spoken + ' ') >= 0);   // "this is it for 600": a name made of little words
+            scores.push(whole ? 2 : words.length ? hits / Math.min(words.length, 3) + hits * 0.01 : 0);
         }
         let col = -1;
         if (/\b(same|stay|again)\b/.test(t) && G.current && G.current.category) {
@@ -2162,7 +2173,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         });
         if (col >= 0 && amount != null && candidates.length == 1) return candidates[0];
         if (col >= 0 && amount == null && candidates.length == 1) return candidates[0];   // last clue in that category
-        if (col < 0 && amount != null && candidates.length == 1) return candidates[0];    // only one clue left at that value
+        if (col < 0 && amount != null && candidates.length == 1 && !said.length) return candidates[0];    // "600" alone, with one clue left at that value
         return null;
     }
     function userPick(tok) {
@@ -2619,10 +2630,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let ev = await fromPlayerOrForce('wager', who, function(p) { return p.num == info.num; }, 45000, { num: info.num, amount: Math.min(max, 1000) });
             if (!alive(tok)) return;
             if (!ev) { onlineLost(); return; }
-            wager = clamp(Math.round(+ev.amount) || 5, 5, max);
+            wager = clamp(Math.round(+ev.amount) || 0, 0, max);
         } else if (isHuman(who)) {
             let max = Math.max(G.scores[who], maxVal);
-            wager = await promptWager(5, max, 'Daily Double — ' + info.category.name,
+            wager = await promptWager(0, max, 'Daily Double — ' + info.category.name,
                 (who == YOU ? 'You have ' : esc(who) + ', you have ') + money(G.scores[who]) + '. You may wager up to ' + money(max) + '.' + standingsTable(true), { voice: true });
             if (!alive(tok)) return;
             if (online()) JPOnline.send('wager', { num: info.num, amount: wager });
@@ -3496,7 +3507,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function notePlayed() {
         if (!G.recorded || typeof JPPlayed == 'undefined') return;
         let a = nextGameLink(), m = a ? a.href.match(/game_id=(\d+)/) : null;
-        JPPlayed.note(gameId(), { t: gameTitle(), d: G.recorded.date, s: G.recorded.score, w: !!G.recorded.won, p: humans().length, next: m ? m[1] : '' });
+        let b = prevGameLink(), pm = b ? b.href.match(/game_id=(\d+)/) : null;
+        JPPlayed.note(gameId(), { t: gameTitle(), d: G.recorded.date, s: G.recorded.score, w: !!G.recorded.won, p: humans().length, next: m ? m[1] : '', prev: pm ? pm[1] : '', newest: !a, o: online() ? G.online.mode : '' });
     }
     // Streaks: games won in a row (games with nobody to beat neither count nor
     // break it), and days played in a row (today or yesterday keeps it alive).
@@ -3537,10 +3549,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (isHuman(who)) return HUMAN_COLORS[Math.max(0, humans().indexOf(who)) % HUMAN_COLORS.length];
         let i = realNames().indexOf(who); return PLAYER_COLORS[Math.max(0, i) % PLAYER_COLORS.length];
     }
-    function dynamicsHtml() {
-        let names = allPlayers();
-        let traj = (G.trajectory || [ ]).slice();
-        // The table: final score, Coryat, right/wrong on regular clues, Daily Doubles.
+    function dynamicsHtml() { return '<h2>Game dynamics</h2>' + dynamicsTable() + dynamicsChart(); }
+    // The table: final score, Coryat, right/wrong on regular clues, Daily Doubles.
+    function dynamicsTable() {
         let rows = ranked(G.scores).map(function(who) {
             let right = 0, wrong = 0, ddN = 0, ddRight = 0;
             if (isHuman(who)) { for (let r of humanRecs(who)) { if (r.kind == 'clue') { if (r.outcome == 'right') right++; else if (r.outcome == 'wrong') wrong++; } else if (r.kind == 'dd') { ddN++; if (r.outcome == 'right') ddRight++; } } }
@@ -3548,10 +3559,15 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             return '<tr' + (isHuman(who) ? ' class="jp-you"' : '') + '><td><span class="jp-swatch" style="background:' + playerColor(who) + '"></span>' + esc(who) + '</td><td class="jp-num">' + money(G.scores[who]) + '</td><td class="jp-num">' + money(coryatScore(who)) + '</td>' +
                    '<td class="jp-num">' + right + ' / ' + wrong + '</td><td class="jp-num">' + (ddN ? ddRight + ' of ' + ddN : '—') + '</td></tr>';
         }).join('');
-        let table = '<table class="jp-results jp-dyn"><tr><th>Player</th><th>Final</th><th>Coryat</th><th>Right / wrong</th><th>Daily Doubles</th></tr>' + rows + '</table>';
-        if (traj.length < 2) return '<h2>Game dynamics</h2>' + table;
-        // The chart.
-        let W = 900, H = 300, L = 62, R = 118, T = 14, B = 34;
+        return '<table class="jp-results jp-dyn"><tr><th>Player</th><th>Final</th><th>Coryat</th><th>Right / wrong</th><th>Daily Doubles</th></tr>' + rows + '</table>';
+    }
+    // The chart: every player's money after each clue. W/H set its shape (it fills its box).
+    function dynamicsChart(W, H) {
+        let names = allPlayers();
+        let traj = (G.trajectory || [ ]).slice();
+        if (traj.length < 2) return '';
+        W = W || 900; H = H || 300;
+        let L = 62, R = 118, T = 14, B = 34;
         let pts = [ { label: 'Start', round: traj[0].round, scores: { } } ].concat(traj);
         names.forEach(function(nm) { pts[0].scores[nm] = 0; });
         pts[pts.length - 1] = Object.assign({ }, pts[pts.length - 1], { scores: clone(G.scores) });   // the end of the line is the standings as they are now (edits included)
@@ -3561,7 +3577,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step; if (hi == lo) hi = lo + step;
         let X = function(i) { return L + (W - L - R) * i / (pts.length - 1); };
         let Y = function(v) { return T + (H - T - B) * (hi - v) / (hi - lo); };
-        let svg = '<svg class="jp-dyn-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Scores after each clue">';
+        let svg = '<svg class="jp-dyn-chart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="aspect-ratio:' + W + '/' + H + '" role="img" aria-label="Scores after each clue">';
         // grid + y labels
         for (let v = lo; v <= hi; v += step) {
             svg += '<line x1="' + L + '" y1="' + Y(v) + '" x2="' + (W - R) + '" y2="' + Y(v) + '" stroke="' + (v == 0 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.12)') + '" stroke-width="1"/>';
@@ -3591,8 +3607,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         svg += '<rect class="jp-dyn-hit" x="' + L + '" y="' + T + '" width="' + (W - L - R) + '" height="' + (H - T - B) + '" fill="transparent"/>';
         svg += '</svg>';
         let json = esc(JSON.stringify({ names: names, pts: pts.map(function(p) { return { label: p.label, scores: p.scores }; }), L: L, R: R, W: W }));
-        return '<h2>Game dynamics</h2>' + table + '<div class="jp-dyn-wrap" data-dyn="' + json + '">' + svg + '<div class="jp-dyn-tip" style="display:none"></div></div>' +
-               '<p class="jp-note">Every player\'s money after each clue. Coryat counts the regular clues only (a Daily Double at face value when right, nothing when wrong; no Final).</p>';
+        return '<div class="jp-dyn-wrap" data-dyn="' + json + '">' + svg + '<div class="jp-dyn-tip" style="display:none"></div></div>' +
+               '<p class="jp-note">Every player\'s money after each clue (hover for the numbers). Coryat counts the regular clues only: a Daily Double at face value when right, nothing when wrong; no Final.</p>';
     }
     function bindDynamics(panel) {
         let wrap = panel.querySelector('.jp-dyn-wrap');
@@ -3678,21 +3694,26 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let streak = (t.winStreak >= 2 ? '<b>' + t.winStreak + ' wins in a row' + (t.winStreak >= t.bestWinStreak ? ' — a best' : '') + '.</b> ' : '') +
                          (t.dayStreak >= 2 ? (hm == YOU ? 'You\'ve' : esc(hm) + ' has') + ' played ' + t.dayStreak + ' days running' + (t.dayStreak >= t.bestDayStreak ? ' (a best)' : '') + '. ' : '');
             return '<h2>' + (hm == YOU || (online() && isMe(hm)) ? 'Your game' : esc(hm) + '\'s game') + '</h2>' + (online() ? ratingLine() : '') +
-                '<p>Clues played: ' + st.clues + ' · buzzer races won: ' + (h.buzzWins || 0) + (multi ? '' : ' · lost: ' + st.buzzLost) + ' · early buzzes: ' + (h.lockouts || 0) + '</p>' +
-                '<p>Responses: ' + entry.answered + ' · correct: ' + entry.correct + ' · incorrect: ' + (entry.answered - entry.correct) + ' · accuracy: ' + acc + '% · Coryat score: <b>' + money(entry.coryat) + '</b>' + (t.avgCoryat != null && all.length > 1 ? ' <span class="jp-note">(' + (hm == YOU ? 'your' : 'the') + ' average: ' + money(t.avgCoryat) + ')</span>' : '') + '</p>' +
-                '<p>' + (rank == 1 && all.length > 1 ? '<b>A new high score!</b> ' : '') + streak + 'This game ranks #' + rank + ' of ' + all.length + ' on this computer' + (all.length > 1 ? ' · win rate ' + t.winRate + '%' : '') + '. <button class="jp-btn jp-secondary jp-scores" data-player="' + esc(entryPlayer(entry)) + '" style="padding:3px 10px;font-size:0.9em">High scores</button> ' +
-                (hm == entryPlayer(G.recorded) && !online() ? '<button class="jp-btn jp-secondary jp-edit-results" style="padding:3px 10px;font-size:0.9em">Edit results</button> <span class="jp-note">(a call the judge got wrong — Final Jeopardy! included — changes the standings and the saved game)</span>' : '') + '</p>';
+                '<p>Responses: <b>' + entry.correct + '</b> right, <b>' + (entry.answered - entry.correct) + '</b> wrong of ' + entry.answered + ' (' + acc + '%) · Coryat <b>' + money(entry.coryat) + '</b>' + (t.avgCoryat != null && all.length > 1 ? ' <span class="jp-note">(' + (hm == YOU ? 'your' : 'the') + ' average ' + money(t.avgCoryat) + ')</span>' : '') +
+                ' · buzzer races won ' + (h.buzzWins || 0) + (multi ? '' : ', lost ' + st.buzzLost) + ' · early buzzes ' + (h.lockouts || 0) + '</p>' +
+                '<p>' + (rank == 1 && all.length > 1 ? '<b>A new high score!</b> ' : '') + streak + 'Ranks #' + rank + ' of ' + all.length + ' on this computer' + (all.length > 1 ? ' · win rate ' + t.winRate + '%' : '') + '. <button class="jp-btn jp-secondary jp-scores" data-player="' + esc(entryPlayer(entry)) + '" style="padding:2px 10px;font-size:0.88em">High scores</button> ' +
+                (hm == entryPlayer(G.recorded) && !online() ? '<button class="jp-btn jp-secondary jp-edit-results" style="padding:2px 10px;font-size:0.88em" title="A call the judge got wrong — Final Jeopardy! included — changes the standings and the saved game">Edit results</button>' : '') + '</p>';
         }).join('');
         let title = winner == YOU || (online() && isMe(winner)) ? 'You win!' : esc(winner) + ' wins' + (isHuman(winner) ? '!' : '');
-        let ending = online()
-            ? '<p><button class="jp-btn jp-again">Play online again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button></p>'
-            : '<p>' + (nextGameLink() ? '<button class="jp-btn jp-next">Play the next game &rarr;</button> ' : '') +
-              '<button class="jp-btn' + (nextGameLink() ? ' jp-secondary' : '') + ' jp-again">Play this game again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button></p>' +
-              (nextGameLink() ? '<p class="jp-note">The next game in the archive (the day after this one) opens ready to start, with these settings.</p>'
-                              : '<p class="jp-note">This is the most recent game in the archive, so there is no next game yet.</p>');
-        showPanel('<h1>' + title + '</h1>' + (online() ? '<p class="jp-note">' + esc(modeLabel(G.online.mode)) + ' · ' + esc(gameTitle()) + '</p>' : '') + standingsTable() + sections + dynamicsHtml() + ending);
+        let actions = online()
+            ? '<button class="jp-btn jp-again">Play online again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button>'
+            : (nextGameLink() ? '<button class="jp-btn jp-next" title="The next game in the archive opens ready to start, with these settings">Play the next game &rarr;</button> ' : '') +
+              (prevGameLink() ? '<button class="jp-btn jp-secondary jp-prev" title="The game before this one opens ready to start">&larr; Previous game</button> ' : '') +
+              '<button class="jp-btn jp-secondary jp-again">Play again</button> <button class="jp-btn jp-secondary jp-close">Back to the page</button>';
+        let sub = online() ? esc(modeLabel(G.online.mode)) + ' · ' + esc(gameTitle()) : esc(gameTitle()) + (nextGameLink() ? '' : ' · the newest game in the archive, so there is no next game yet');
+        let chart = dynamicsChart(720, 440);
+        showPanel('<div class="jp-final-head"><div><h1>' + title + '</h1><div class="jp-note">' + sub + '</div></div><div class="jp-final-actions">' + actions + '</div></div>' +
+            '<div class="jp-final-grid' + (chart ? '' : ' jp-one') + '"><div class="jp-final-left">' + dynamicsTable() + sections + '</div>' +
+            (chart ? '<div class="jp-final-right">' + chart + '</div>' : '') + '</div>').classList.add('jp-final-panel');
+        let pv = U.stage.querySelector('.jp-prev');
+        if (pv) pv.onclick = function() { goToGame(prevGameLink()); };
         let nx = U.stage.querySelector('.jp-next');
-        if (nx) nx.onclick = function() { goToNextGame(); };
+        if (nx) nx.onclick = function() { goToGame(nextGameLink()); };
         U.stage.querySelectorAll('.jp-scores').forEach(function(b) { b.onclick = function() { showScores(showFinalStandings, b.dataset.player); }; });
         let er = U.stage.querySelector('.jp-edit-results');
         if (er) er.onclick = function() { showPauseMenu(); swapPauseContents('results'); };
@@ -3702,22 +3723,27 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         setHint('');
     }
 
-    // The archive's "[next game >>]" link on this page, if there is one.
+    // The archive's "[next game >>]" and "[<< previous game]" links on this page, if there are any.
     function nextGameLink() {
         let links = document.querySelectorAll('a[href*="showgame.php?game_id="]');
         for (let a of links) if (/next game/i.test(a.textContent)) return a;
         return null;
     }
-    // Go to the next game's page; the hash tells the extension there to open
+    function prevGameLink() {
+        let links = document.querySelectorAll('a[href*="showgame.php?game_id="]');
+        for (let a of links) if (/previous game/i.test(a.textContent)) return a;
+        return null;
+    }
+    // Go to another game's page; the hash tells the extension there to open
     // the live overlay straight away (one click starts it — the browser needs
     // a click on the new page before it will play audio).
-    function goToNextGame() {
-        let a = nextGameLink();
+    function goToGame(a) {
         if (!a) return;
         saveSettings();
         quitLive();
         location.href = a.href.replace(/#.*$/, '') + '#jplive-next';
     }
+    function goToNextGame() { goToGame(nextGameLink()); }
     // On a page opened by "Play the next game": open the overlay ready to start.
     function autoOpenIfRequested() {
         if (location.hash != '#jplive-next') return;
@@ -3735,8 +3761,19 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
     // "Play the game after it" from the archive's pages, for a game that had
     // no next game when it was played: forward to the next game if the archive
-    // has one now, otherwise say so.
+    // has one now, otherwise say so. #jplive-prev does the same for the game before.
     function continueIfRequested() {
+        if (location.hash == '#jplive-prev') {
+            let b = prevGameLink();
+            if (b) { location.replace(b.href.replace(/#.*$/, '') + '#jplive-next'); return; }
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+            if (!document.getElementById('live_btn')) return;
+            startLiveGame();
+            let p0 = showPanel('<h1>No earlier game</h1><p>' + esc(gameTitle()) + ' is the first game in the archive\'s list, so there is nothing before it.</p><p style="margin-top:1em"><button class="jp-btn jp-again">Play this game</button> <button class="jp-btn jp-secondary jp-cancel">Back to the page</button></p>');
+            p0.querySelector('.jp-again').onclick = function() { showSetup(); };
+            p0.querySelector('.jp-cancel').onclick = function() { quitLive(); };
+            return;
+        }
         if (location.hash != '#jplive-continue') return;
         let a = nextGameLink();
         if (a) { location.replace(a.href.replace(/#.*$/, '') + '#jplive-next'); return; }
@@ -3766,7 +3803,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         }
     }
     // archive.js builds the page (and the Play Live button) at load; look after it.
-    if (/^#jplive-(next|continue|online|room=|join=)/.test(location.hash)) {
+    if (/^#jplive-(next|continue|prev|online|room=|join=)/.test(location.hash)) {
         let tries = 0;
         let t = setInterval(function() { if (document.getElementById('live_btn') || ++tries > 50) { clearInterval(t); autoOpenIfRequested(); continueIfRequested(); onlineIfRequested(); } }, 100);
     }

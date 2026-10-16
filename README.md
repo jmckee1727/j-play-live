@@ -197,11 +197,16 @@ the vendored `supabase-js`. Details in `PUBLISHING.md`.
 
 Once you've finished a game, every J! Archive page marks it: a gold `✓` after its link in the
 season lists (hover for the date and your score), and a note next to **Play Live** on the game's own
-page. A small **J-Play Live** panel in the corner of every archive page offers the next game after
-the last one you played — one click opens it ready to start, with your settings. (If the game you
-finished was the newest in the archive, the panel takes you through it to whatever comes next once
-it exists.) The list lives in the extension's own storage on this computer; the `×` hides the panel
-for the rest of the browser session.
+page. A small **J-Play Live** panel in the corner of every archive page has one big button and a
+few links: the next game after the last one you played, the previous one, the most recent complete
+game in the archive (yesterday's, since today's may still be half-entered), and online play. Which
+is the big button depends on how you play: a newcomer gets yesterday's game; someone climbing
+through the games gets the next one; someone working back in time gets the previous one; someone
+who last played the newest game gets the newest; someone who last played online gets online. One
+click opens the game ready to start, with your settings. The list lives in the extension's own
+storage on this computer and is rebuilt from the saved games on the site if the extension is ever
+reinstalled; with an account it is kept online too. The `×` hides the panel for the rest of the
+browser session.
 
 ## High scores and statistics
 

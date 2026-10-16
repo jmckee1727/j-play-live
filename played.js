@@ -57,6 +57,57 @@ window.JPPlayed = (function() {
         });
     }
     function forget() { cache = empty(); write(); }
+    // Air dates of games seen in the archive's lists (id -> 'YYYY-MM-DD'), for "the most recent game".
+    let dates = null;
+    function readDates(cb) {
+        if (dates) return cb(dates);
+        if (!store) { try { dates = JSON.parse(localStorage.getItem('jpLiveDates')) || { }; } catch (e) { dates = { }; } return cb(dates); }
+        store.get([ 'jpLiveDates' ], function(r) { dates = (r && r.jpLiveDates) || { }; cb(dates); });
+    }
+    function noteDates(found) {
+        readDates(function(d) {
+            let changed = false;
+            for (let id in found) if (d[id] != found[id]) { d[id] = found[id]; changed = true; }
+            if (!changed) return;
+            let ids = Object.keys(d).map(Number).sort(function(a, b) { return b - a; });
+            for (let id of ids.slice(500)) delete d[id];     // the newest 500 are plenty
+            if (store) store.set({ jpLiveDates: d }); else { try { localStorage.setItem('jpLiveDates', JSON.stringify(d)); } catch (e) { } }
+        });
+    }
+    function today() { let n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); }
+    // The newest game that aired before today (today's may still be half-entered): { id, aired } or null.
+    function newestComplete(d) {
+        let best = null, t = today();
+        for (let id in d) if (d[id] < t && (!best || +id > best.id)) best = { id: +id, aired: d[id] };
+        return best;
+    }
+    // The game before the last one played, following the chain back over games already played.
+    function prevUp(c) {
+        if (!c.last) return null;
+        let cur = c.last.id, seen = 0;
+        while (seen++ < 500) {
+            let rec = c.games[cur];
+            let p = rec ? rec.prev : '';
+            if (!p) return { before: cur, title: (c.games[cur] || c.last).t };
+            if (!c.games[p]) return { id: p, before: cur, title: (c.games[cur] || c.last).t };
+            cur = p;
+        }
+        return null;
+    }
+    // How this person plays, from their last games: 'new' (none yet), 'online' (the last was online),
+    // 'newest' (the last was the archive's newest at the time), 'forward' (climbing through the
+    // games) or 'backward' (working back in time).
+    function style(c) {
+        let played = Object.keys(c.games).map(function(id) { return Object.assign({ id: +id }, c.games[id]); }).filter(function(g) { return g.d; });
+        if (!played.length) return 'new';
+        played.sort(function(a, b) { return a.d < b.d ? 1 : a.d > b.d ? -1 : 0; });
+        let last = played[0];
+        if (last.o) return 'online';
+        if (last.newest) return 'newest';
+        if (played.length < 2 || !last.prev && !last.next) return 'forward';
+        let prev = played[1];
+        return last.id < prev.id ? 'backward' : 'forward';
+    }
     // The game to play next: follow the chain from the last game played until
     // an unplayed one; { id } when known, { after: id } when the last game in
     // the chain had no "next game" link yet (it was the newest at the time).
@@ -72,7 +123,7 @@ window.JPPlayed = (function() {
         }
         return null;
     }
-    return { note: note, importScores: importScores, importIds: importIds, get: get, read: read, forget: forget, nextUp: nextUp };
+    return { note: note, importScores: importScores, importIds: importIds, get: get, read: read, forget: forget, nextUp: nextUp, prevUp: prevUp, style: style, readDates: readDates, noteDates: noteDates, newestComplete: newestComplete };
 })();
 
 // ---- the page: badges, the note on a played game, the continue panel ----
@@ -86,9 +137,24 @@ window.JPPlayed = (function() {
     function played(rec) { return rec.cloud && !rec.d ? 'Played (per your account)' : 'Played ' + fmtDate(rec.d) + (typeof rec.s == 'number' ? ' — ' + money(rec.s) + (rec.w ? ', won' : '') : '') + (rec.n > 1 ? ' (' + rec.n + ' times)' : '') + (rec.p > 1 ? ', ' + rec.p + ' players' : ''); }
     let here = gameIdOf(location.pathname + location.search);
 
+    const MONTHS = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+    function airedIn(text) {
+        let m = text.match(/aired\s+(\d{4}-\d{2}-\d{2})/i);
+        if (m) return m[1];
+        m = text.match(/([A-Z][a-z]+)\s+(\d{1,2}),\s+(\d{4})/);
+        if (m && MONTHS[m[1].toLowerCase()]) return m[3] + '-' + String(MONTHS[m[1].toLowerCase()]).padStart(2, '0') + '-' + String(+m[2]).padStart(2, '0');
+        return '';
+    }
     function noteNewest() {
-        let max = +here || 0;
-        document.querySelectorAll('a[href*="showgame.php?game_id="]').forEach(function(a) { let id = +gameIdOf(a.getAttribute('href') || ''); if (id > max) max = id; });
+        let max = +here || 0, found = { };
+        document.querySelectorAll('a[href*="showgame.php?game_id="]').forEach(function(a) {
+            let id = +gameIdOf(a.getAttribute('href') || '');
+            if (id > max) max = id;
+            let when = airedIn(a.textContent || '') || airedIn((a.parentElement && a.parentElement.textContent) || '');
+            if (id && when) found[id] = when;
+        });
+        if (here) { let when = airedIn(document.title || ''); if (when) found[here] = when; }
+        if (Object.keys(found).length) JPPlayed.noteDates(found);
         if (!max) return;
         try { chrome.storage.local.get([ 'jpLiveMaxGame' ], function(o) { if (!o || !(o.jpLiveMaxGame >= max)) chrome.storage.local.set({ jpLiveMaxGame: max }); }); } catch (e) { }
     }
@@ -116,27 +182,46 @@ window.JPPlayed = (function() {
             btn.insertAdjacentElement('afterend', el('span', 'jp-played-note', '✓ ' + esc(played(rec))));
         }, 100);
     }
+    // The panel: the way this person plays decides the big button (the next
+    // game, the previous one, the newest, or online); the other ways are links.
     function panel(c) {
-        let nx = JPPlayed.nextUp(c) || { };
         try { if (sessionStorage.getItem('jpLiveContinueHidden')) return; } catch (e) { }
         if (document.querySelector('.jp-continue')) return;
-        let isNext = nx.id && nx.id == here, isLast = nx.after == here;
-        let body;
-        if (!nx.id && !nx.after) body = '';
-        else if (isNext) body = '<b>This is the next game</b> after the last one you played (' + esc(nx.title) + ').<div class="jp-continue-actions"><button class="jp-continue-go">▶ Play it</button></div>';
-        else if (nx.id) body = '<b>Pick up where you left off</b><div class="jp-continue-last">Last played: ' + esc(nx.title) + '</div><div class="jp-continue-actions"><a class="jp-continue-go" href="showgame.php?game_id=' + nx.id + '#jplive-next">▶ Play the next game</a></div>';
-        else body = '<b>Pick up where you left off</b><div class="jp-continue-last">Last played: ' + esc(nx.title) + (isLast ? ' (this one)' : '') + '.</div><div class="jp-continue-actions"><a class="jp-continue-go" href="showgame.php?game_id=' + nx.after + '#jplive-continue">▶ Play the game after it</a></div>';
-        let onlineAt = 'showgame.php?game_id=' + (nx.id || nx.after || here || 9537) + '#jplive-online';
-        body += '<div class="jp-continue-online"' + (body ? '' : ' style="margin-top:0;padding-top:0;border-top:0"') + '><a href="' + onlineAt + '">Play online</a> — friends, or a ranked match</div>';
-        let box = el('div', 'jp-continue', '<div class="jp-continue-head">J-Play Live <button class="jp-continue-x" title="Hide for now">×</button></div>' + body);
-        document.body.appendChild(box);
-        box.querySelector('.jp-continue-x').onclick = function() { box.remove(); try { sessionStorage.setItem('jpLiveContinueHidden', '1'); } catch (e) { } };
-        let go = box.querySelector('button.jp-continue-go');
-        if (go) go.onclick = function() { let b = document.getElementById('live_btn'); if (b) b.click(); box.remove(); };
+        JPPlayed.readDates(function(d) {
+            let style = JPPlayed.style(c), nx = JPPlayed.nextUp(c), pv = JPPlayed.prevUp(c), newest = JPPlayed.newestComplete(d);
+            let last = c.last, lastTitle = last ? (c.games[last.id] || last).t : '';
+            let showNo = function(t) { let m = String(t || '').match(/#(\d+)/); return m ? 'Show #' + m[1] : t; };
+            let opts = [ ];   // { key, label, href|click, note }
+            if (nx && nx.id) opts.push({ key: 'next', label: 'Play the next game', href: 'showgame.php?game_id=' + nx.id + '#jplive-next', note: 'after ' + showNo(nx.title) });
+            else if (nx && nx.after) opts.push({ key: 'next', label: 'Play the next game', href: 'showgame.php?game_id=' + nx.after + '#jplive-continue', note: 'after ' + showNo(nx.title) + ', once the archive has it' });
+            if (pv && pv.id) opts.push({ key: 'prev', label: 'Play the previous game', href: 'showgame.php?game_id=' + pv.id + '#jplive-next', note: 'before ' + showNo(pv.title) });
+            else if (pv && pv.before) opts.push({ key: 'prev', label: 'Play the previous game', href: 'showgame.php?game_id=' + pv.before + '#jplive-prev', note: 'before ' + showNo(pv.title) });
+            if (newest && !c.games[newest.id]) opts.push({ key: 'newest', label: style == 'new' ? 'Play yesterday\'s game' : 'Play the most recent game', href: 'showgame.php?game_id=' + newest.id + '#jplive-next', note: 'aired ' + fmtDate(newest.aired + 'T12:00:00') });
+            else if (newest) opts.push({ key: 'newest', label: 'The most recent game', note: 'played — check back after the next one airs', dim: true });
+            opts.push({ key: 'online', label: 'Play online', href: 'showgame.php?game_id=' + ((nx && (nx.id || nx.after)) || (newest && newest.id) || here || 9537) + '#jplive-online', note: 'friends, or a ranked match' });
+            let order = { online: [ 'online', 'next', 'newest', 'prev' ], newest: [ 'newest', 'prev', 'next', 'online' ], 'new': [ 'newest', 'next', 'online' ], backward: [ 'prev', 'next', 'newest', 'online' ], forward: [ 'next', 'newest', 'prev', 'online' ] }[style] || [ 'next', 'online' ];
+            let main = null;
+            for (let k of order) { main = opts.find(function(o) { return o.key == k && o.href; }); if (main) break; }
+            // Already on the page the big button would open: play it here.
+            let onIt = main && main.href && gameIdOf(main.href) == here && document.getElementById('live_btn');
+            let body = '';
+            if (style == 'new') body += '<div class="jp-continue-last">New here? Start with the newest game that\'s complete' + (newest ? '' : ' — open the archive\'s front page or a season list to find it') + '.</div>';
+            else if (last) body += '<div class="jp-continue-last">Last played: ' + esc(lastTitle) + (last.id == here ? ' (this page)' : '') + '</div>';
+            if (main) body += '<div class="jp-continue-actions">' + (onIt ? '<button class="jp-continue-go" data-key="' + main.key + '">▶ ' + esc(main.label) + '</button>' : '<a class="jp-continue-go" href="' + esc(main.href) + '">▶ ' + esc(main.label) + '</a>') + (main.note ? ' <span class="jp-continue-note">' + esc(main.note) + '</span>' : '') + '</div>';
+            let rest = opts.filter(function(o) { return o !== main; });
+            if (rest.length) body += '<div class="jp-continue-more">' + rest.map(function(o) { return o.href ? '<div><a href="' + esc(o.href) + '">' + esc(o.label) + '</a>' + (o.note ? ' <span class="jp-continue-note">— ' + esc(o.note) + '</span>' : '') + '</div>' : '<div class="jp-continue-dim">' + esc(o.label) + (o.note ? ' <span class="jp-continue-note">— ' + esc(o.note) + '</span>' : '') + '</div>'; }).join('') + '</div>';
+            let box = el('div', 'jp-continue', '<div class="jp-continue-head">J-Play Live <button class="jp-continue-x" title="Hide for now">×</button></div>' + body);
+            document.body.appendChild(box);
+            box.querySelector('.jp-continue-x').onclick = function() { box.remove(); try { sessionStorage.setItem('jpLiveContinueHidden', '1'); } catch (e) { } };
+            let go = box.querySelector('button.jp-continue-go');
+            if (go) go.onclick = function() { let b = document.getElementById('live_btn'); if (b) b.click(); box.remove(); };
+        });
     }
     function run() {
         noteNewest();
         JPPlayed.read(function(c) {
+            // Games saved on this site before the list existed (or after the extension was reinstalled) fill it back in.
+            try { let saved = JSON.parse(localStorage.getItem('jpLiveScores') || '[]'); if (saved.length) JPPlayed.importScores(saved); } catch (e) { }
             badges(c);
             noteHere(c);
             panel(c);

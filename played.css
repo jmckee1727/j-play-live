@@ -13,10 +13,14 @@
 .jp-continue-x { background: none; border: 0; color: #D69F4C; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
 .jp-continue-last { opacity: 0.9; margin-top: 2px; }
 .jp-continue-actions { margin-top: 8px; }
-.jp-continue-go {
+.jp-continue a.jp-continue-go, .jp-continue a.jp-continue-go:visited, .jp-continue .jp-continue-go {
     display: inline-block; background: #D69F4C; color: #071277; font-weight: bold; text-decoration: none;
     padding: 5px 12px; border-radius: 4px; border: 0; cursor: pointer; font-size: 14px; font-family: inherit;
 }
 .jp-continue-go:hover { background: #f0b85e; }
-.jp-continue-online { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(214, 159, 76, 0.4); font-size: 13px; opacity: 0.95; }
-.jp-continue-online a { color: #D69F4C; font-weight: bold; }
+.jp-continue-more { margin-top: 9px; padding-top: 7px; border-top: 1px solid rgba(214, 159, 76, 0.4); font-size: 13px; line-height: 1.5; }
+.jp-continue a, .jp-continue a:visited, .jp-continue a:hover { color: #D69F4C; font-weight: bold; text-decoration: none; }
+.jp-continue-more a:hover { text-decoration: underline; }
+.jp-continue-note { color: rgba(255, 255, 255, 0.72); font-weight: normal; font-size: 12px; }
+.jp-continue-dim { color: rgba(255, 255, 255, 0.6); }
+.jp-continue-actions .jp-continue-note { display: block; margin-top: 4px; }

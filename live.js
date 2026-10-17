@@ -557,10 +557,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         for (let it of r.items) { if (it.ok && it.el) placeMedia(it, opts); else kinds[it.kind] = true; }
         if (r.missing) {
             // A strip at the foot of the clue, where every clue keeps room for it: you should know before you ring in.
-            let what = r.missing == r.total ? (kinds.image && !kinds.audio && !kinds.video ? 'picture' : kinds.audio && !kinds.image && !kinds.video ? 'audio' : kinds.video && !kinds.image && !kinds.audio ? 'video' : 'media') : 'rest of the media';
-            let credit = S.mediaCredit == 'none' ? 'the contestants get no credit for it' : S.mediaCredit == 'full' ? 'scored as on TV' : 'the contestants get half credit for it';
+            let kind = kinds.image && !kinds.audio && !kinds.video ? 'picture' : kinds.audio && !kinds.image && !kinds.video ? 'audio' : kinds.video && !kinds.image && !kinds.audio ? 'video' : 'media';
+            let what = r.missing < r.total ? 'some media missing' : r.missing > 1 && kind == 'picture' ? 'missing ' + r.missing + ' pictures' : r.missing > 1 ? 'missing ' + kind + ' (' + r.missing + ' files)' : 'missing ' + kind;
+            let credit = S.mediaCredit == 'none' ? 'contestants get no credit' : S.mediaCredit == 'full' ? 'scored as on TV' : 'contestants get half credit';
             let old = clueEl.querySelector('.jp-clue-nomedia'); if (old) old.remove();
-            clueEl.appendChild(h('div', 'jp-clue-nomedia', '<span class="jp-clue-nomedia-head">Media clue</span> <span class="jp-clue-nomedia-what">the archive doesn\'t have its ' + esc(what) + (r.missing > 1 && r.missing == r.total ? ' (' + r.missing + ' files)' : '') + ' — ' + credit + '</span>'));
+            let band = h('div', 'jp-clue-nomedia', '<span class="jp-clue-nomedia-head">Media clue:</span> <span class="jp-clue-nomedia-what">' + esc(what) + ' — ' + credit + '</span>');
+            let strip = clueEl.querySelector('.jp-clue-cat');
+            if (strip) strip.appendChild(band); else clueEl.insertBefore(band, clueEl.firstChild);   // right under the category, before the clue is read
         }
         if (!box.childNodes.length) { clueMediaEl = null; return; }
         clueEl.insertBefore(box, clueSubEl);
@@ -644,19 +647,26 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function fitClueText() {
         if (!clueEl || !clueTextEl || !clueEl.isConnected || clueEl.dataset.fit != '1') return;
         let strip = clueEl.querySelector('.jp-clue-cat');
-        if (strip) clueEl.style.paddingTop = (strip.offsetHeight + 28) + 'px';   // clear of the category strip (10px in, inside the lights)
-        let cs = getComputedStyle(clueEl);
-        let padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
-        let subH = clueSubEl ? clueSubEl.offsetHeight : 0;
-        let mediaH = (clueMediaEl && clueMediaEl.isConnected) ? clueMediaEl.offsetHeight + 14 : 0;
-        let avail = clueEl.clientHeight - padT - padB - subH - mediaH - 6;
         let W = clueEl.clientWidth, H = clueEl.clientHeight;
-        if (avail < 40 || W < 160) return;
+        if (W < 160) return;
         // The show's proportions: a narrow column of short lines (about 45% of
         // the width) in a type size tied to the screen, not to the clue's
         // length. Long clues get a wider column first, then a smaller size;
         // pictures and other extras below the text take from the height.
         let target = Math.max(18, Math.min(H * 0.1, W * 0.055));   // measured off the broadcast (~9% of the height), plus a little for this face's smaller capitals
+        // The category strip: nearly the clue's size (a touch smaller), and the clue clears it (10px in, inside the lights).
+        let setStrip = function(px) { if (strip) { strip.style.fontSize = px + 'px'; clueEl.style.paddingTop = (strip.offsetHeight + 28) + 'px'; } };
+        setStrip(Math.round(target * 0.82));
+        let avail, cs, padT, padB;
+        let measure = function() {
+            cs = getComputedStyle(clueEl);
+            padT = parseFloat(cs.paddingTop) || 0; padB = parseFloat(cs.paddingBottom) || 0;
+            let subH = clueSubEl ? clueSubEl.offsetHeight : 0;
+            let mediaH = (clueMediaEl && clueMediaEl.isConnected) ? clueMediaEl.offsetHeight + 14 : 0;
+            avail = clueEl.clientHeight - padT - padB - subH - mediaH - 6;
+        };
+        measure();
+        if (avail < 40) return;
         let fit = function(width) {
             clueTextEl.style.maxWidth = width + 'px';
             clueTextEl.style.width = width + 'px';
@@ -671,9 +681,15 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             }
             return lo;
         };
-        let size = fit(Math.round(W * 0.45));
-        if (size < target * 0.8) size = fit(Math.round(W * 0.6));
-        if (size < target * 0.65) size = fit(Math.round(W * 0.76));
+        let fitAll = function() {
+            let size = fit(Math.round(W * 0.45));
+            if (size < target * 0.8) size = fit(Math.round(W * 0.6));
+            if (size < target * 0.65) size = fit(Math.round(W * 0.76));
+            return size;
+        };
+        let size = fitAll();
+        // A long clue came out smaller than the strip: the strip follows it down, and the text gets the room back.
+        if (strip && size < target * 0.82) { setStrip(Math.max(16, Math.round(size * 0.92))); measure(); if (avail >= 40) size = fitAll(); }
         clueTextEl.style.fontSize = Math.floor(size) + 'px';
     }
     let fitObserver = null;

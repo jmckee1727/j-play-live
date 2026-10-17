@@ -59,15 +59,25 @@ The free plan covers it (two active projects per organization). What is there:
   `sync_played`, `note_max_game`, `room_state`; the `leaderboard` view.
 - **Realtime**: private broadcast channels `room:<id>`; policies on `realtime.messages` let
   only a room's players send and receive. Broadcast delivery is not strictly ordered, so every
-  message is keyed (clue, attempt, sender) and the clients' `waitFor` reads from an inbox.
+  message is keyed (clue, attempt, sender) and the clients' `waitFor` reads from an inbox. The
+  host's `scores` messages carry a sequence number (a client ignores an older one), and the
+  final `finished` message carries the host's standings and every vote verdict, so a client that
+  missed a message still ends with the same record.
+- **Votes** (`vote` / `ballot` / `verdict` messages, all in `live.js`): a vote is keyed by the
+  response (`<clue>:<player>`, `fj:<player>`); the caller's own vote is implied; the host alone
+  tallies and sends the verdict (a majority of the players for a reversal to right, every other
+  player for a challenge to wrong, 45 s timeout = stands) and re-sends its standings; the other
+  clients change only their record of the response and take the host's money. The host settles
+  open votes before `finish_room`, after a six-second last call on the Final Jeopardy! rulings.
 - **Keys**: the extension ships the project URL and the *publishable* key (public by design;
   row-level security is what protects the data). The service-role key lives only in the edge
   functions' environment. Never put it in the extension.
 - **Migrations** were applied through the Supabase MCP (`jplay_core`, `jplay_functions`,
   `jplay_realtime_policies`, `jplay_membership_helpers`); the SQL is in the dashboard's
   migration history. `test/online/api.js` and `test/online/e2e_online.js` (three browsers with
-  the extension, a lobby game and a ranked match against the live service) are the tests; the
-  test accounts are `jplay-test-{ann,bob,cy}@example.com`.
+  the extension, a lobby game and a ranked match against the live service; `VOTE=1` has the bots
+  call votes on their wrong rulings and cast ballots) are the tests; the test accounts are
+  `jplay-test-{ann,bob,cy}@example.com`.
 - **Abuse**: an account is an email and a name; there is no email verification, so an abuser can
   make accounts freely. If that becomes a problem, turn on email confirmation (or a captcha) in
   the dashboard and switch the client to the auth service's own sign-up. The correct responses are

@@ -189,6 +189,25 @@
 .jp-clue-sub .jp-correct { color: #6cff8f; font-weight: bold; }
 .jp-clue-sub .jp-incorrect { color: #ff7a7a; font-weight: bold; }
 .jp-clue-sub em.correct_response { color: #6cff8f; font-style: normal; }
+.jp-clue-sub .jp-sweep { display: inline-block; color: #071277; background: gold; font-weight: bold; padding: 0 0.45em; border-radius: 0.25em; text-shadow: none; margin-left: 0.3em; }
+.jp-podium .jp-pline .jp-correct { color: #6cff8f; }
+.jp-podium .jp-pline .jp-incorrect { color: #ff7a7a; }
+
+/* ---- votes (online): the box in the corner ---- */
+.jp-votes { position: absolute; right: 18px; top: 66px; width: 360px; max-width: 42vw; z-index: 6; display: flex; flex-direction: column; gap: 8px; font-size: 0.95em; }
+.jp-vote { background: rgba(4, 9, 77, 0.96); border: 2px solid #D69F4C; border-radius: 8px; padding: 10px 12px; box-shadow: 0 4px 18px rgba(0,0,0,0.55); line-height: 1.35; text-shadow: 1px 1px 1px #000; }
+.jp-vote.jp-vote-offer { border-color: rgba(214,159,76,0.6); background: rgba(4, 9, 77, 0.88); font-size: 0.92em; }
+.jp-vote.jp-vote-offer.jp-dim { opacity: 0.8; }
+.jp-vote h3 { margin: 0 0 4px; font-size: 1.05em; color: gold; font-weight: normal; }
+.jp-vote h3 b { font-weight: bold; }
+.jp-vote .jp-vote-q { margin-top: 6px; font-weight: bold; }
+.jp-vote .jp-vote-btns { margin-top: 6px; display: flex; gap: 6px; }
+.jp-vote .jp-btn { padding: 3px 10px; font-size: 0.92em; margin: 2px 0; }
+.jp-vote .jp-vote-result { margin-top: 4px; font-weight: bold; }
+.jp-vote .jp-vote-result.jp-correct { color: #6cff8f; }
+.jp-vote .jp-vote-result.jp-incorrect { color: #ff7a7a; }
+.jp-vote .jp-note { font-size: 0.85em; opacity: 0.85; margin-top: 3px; }
+.jp-vote .jp-key { font-size: 0.85em; }
 .jp-clue-big {
     color: #fff;
     font-family: "JP Board", Anton, Impact, "Arial Narrow", sans-serif;

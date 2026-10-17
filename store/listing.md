@@ -21,13 +21,13 @@ Open a game page on j-archive.com, click ▶ Play Live, and the host reads each 
 • High scores and statistics, kept on your computer: win rate, Coryat scores, Daily Double and Final Jeopardy! results, streaks.
 • Play together on one keyboard: two or three of you, each with your own ring-in key (one on the mouse), with the original contestants or without them — up to six podiums, and a saved game for everyone.
 • Games you've played get a ✓ in the archive's lists, and a small panel on every archive page offers the next game after the last one you played.
-• Online play, with a free account: a lobby for two or three friends (a code or a link), or a queue for a three-player ranked or unrated match on a game none of you has played, with a rating by finishing place, average Coryat, and a leaderboard.
+• Online play, with a free account: a lobby for two or three friends (a code or a link), or a queue for a three-player ranked or unrated match on a game none of you has played, with a rating by finishing place, average Coryat, and a leaderboard. Ruled wrong when you were right? Call a vote; a majority of the players reverses it.
 • The host reads the categories at the start of each round, the way the show does.
 • Daily Doubles and Final Jeopardy! with wagering, including the game-theory-savvy wagers the contestants make against the live standings.
-• Responses judged leniently, like the show ("what is" optional, surnames accepted, typos and mis-hearings forgiven), with y/n to overrule.
+• Responses judged leniently, like the show ("what is" optional, surnames accepted, typos, homophones and mis-hearings forgiven), with y/n to overrule.
 • The clue board and clue screens styled like the show, with the category shown on every clue.
 • Pause anything, anytime. Click or press Space to move on.
-• Original 30-second think music for Final Jeopardy!, and built-in sound cues you can replace with your own files.
+• Original 30-second think music for Final Jeopardy!, a chime for running a category or getting a Daily Double or Final Jeopardy! right, a fanfare for winning, and built-in sound cues you can replace with your own files.
 • Pick clues the way contestants do: "Science for 600" (clicking works too).
 • The contestants speak their responses in voices of their own, and the host runs the game like a host: the standings at the top of Double Jeopardy!, the Daily Double exchange, the Final Jeopardy! reveal place by place.
 • Misjudged? Fix any of your responses afterwards with Edit results; only the money changes.

@@ -103,9 +103,9 @@ when it is loaded.
 | Key | Action |
 | --- | --- |
 | `Space` (configurable) or a mouse click anywhere | Ring in. Before the lights = locked out for a moment. When the game is waiting for you, the same key/click moves on. With several players, each has their own key (see **Playing together**). |
-| `Enter` | Lock in a typed response or a wager (also moves on). A Daily Double wager can be spoken instead ("twelve hundred", "all of it"); a Final Jeopardy! wager is typed. Clicks outside the wager box confirm nothing. |
+| `Enter` | Lock in a typed response or a wager (also moves on). A Daily Double wager can be spoken instead ("twelve hundred", "the maximum", "true Daily Double" — which wagers everything you have, so a right response doubles your money; the round's maximum can be more, and with nothing to double the phrase is ignored); a Final Jeopardy! wager is typed. Clicks outside the wager box confirm nothing. |
 | `Space` or a click during the Final Jeopardy! music | Ring in to respond: the music ducks, the mic opens, and your first phrase is locked in. (Typing works throughout; with the box empty, Space rings in.) |
-| `y` / `n` | Overrule the judge on your last response (until the next clue). The correct response is shown after every verdict, right or wrong, so you can check the call and learn the exact wording. The money, the rebound and control of the board all follow. |
+| `y` / `n` | Overrule the judge on your last response (until the next clue). The correct response is shown after every verdict, right or wrong, so you can check the call and learn the exact wording. The money, the rebound and control of the board all follow. Online, the same keys call a vote (`y`: I was right; `n`: challenge a ruling) or cast your ballot on one. |
 | **Rewind** (pause menu) | Every clue played so far, in order. Go back to the moment before any of them: that clue and everything after it are played again with the board, the money and control as they were; your responses from that point are cleared. |
 | **Edit results** (pause menu) | Every response of yours, each with Right / No response / Wrong. Change one and the money follows: yours, and that of anyone who rang in after you on that clue (mark yourself right and the rebound never happened; mark yourself wrong and it plays out as broadcast). The ring-in order and control of the board stay as they happened. |
 | a click, the buzz key or `Enter` during any line of dialogue | Skips the rest of that line (the clue reading itself excepted — a click then is a buzz). |
@@ -133,7 +133,7 @@ are the archived ones. The category is shown across the top of every clue.
 | `archive.js` | The original j-play code: scrapes the page into `clues[]` (indexed by broadcast order), parses responses, and provides the review mode. Small additions are marked `j-play-live`. |
 | `clock.js` | `JPClock`: a pausable game clock. Every game timer runs on it, which is what makes Pause freeze the game mid-clue. |
 | `audio.js` | `JPAudio`: text-to-speech (`speak`), sound effects (`play`, with `sounds/` overrides), speech recognition (`listen`). |
-| `judge.js` | `JPJudge`: decides whether your response matches the archive's correct response. |
+| `judge.js` | `JPJudge`: decides whether your response matches the archive's correct response — "what is" optional, articles ignored, surnames accepted, typos forgiven, and homophones heard the recognizer's way ("low" for lo, "Shawn" for Sean) folded by sound and by a table of the irregular ones. |
 | `interpret.js` | `JPInterpret`: reads a clue like a contestant to phrase the response ("Who is" / "Who are" / "What is" / "What are"), from the noun after "this", pronouns, the category and plurality. |
 | `reader.js` | `JPReader`: makes archive text speakable — abbreviations ("cont. U.S.", "pres."), Roman numerals ("Henry VIII"), decades ("the '60s"), dashes, ALL-CAPS categories, bracketed asides. |
 | `wagers.js` | `JPWagers`: how the contestants wager. Final Jeopardy! uses the standard game theory (leader shores up or keeps a lock, second place beats the leader by $1 / covers / goes all in, everyone else all in); Daily Doubles use a sensible heuristic. The reasoning is shown at the reveal. |
@@ -167,7 +167,7 @@ to the email) from the box at the top of the setup screen, and the same box offe
 
 * **Create a lobby** — plays this page's game with your settings (contestants on or off, speed,
   timing) for two or three of you. Friends join with the six-letter code (Join on their own setup
-  screen) or the invite link; the host starts it. Only the host's y/n overrule is off online.
+  screen) or the invite link; the host starts it.
 * **Ranked match** and **Unrated match** — a queue. When three players are waiting, the service
   picks an archive game none of you has finished and sends everyone to its page; the game starts
   when all three have arrived (a ranked match with a no-show is called off). No archive
@@ -189,6 +189,17 @@ forced after a timeout), and reports the finished game; the service writes resul
 An online game can't be paused or rewound; leaving it lets the others go on. The correct
 responses are on every player's page, so this is a game of trust among friends, with ratings and
 a record to protect: statistical checks and reports are the plan for the ranked ladder.
+
+**Votes.** Nobody is the referee online, so the y/n overrule becomes a vote. Ruled wrong when you
+were right? A box in the corner offers **Call a vote** (or press `y`): the others see what you
+said and the correct response and vote yes or no (`y` / `n` or the buttons); a majority of the
+players reverses it, your own vote included — so one of the other two in a three-player game.
+The reverse exists too: anyone can **challenge** a response ruled right (`n`), and every other
+player must agree (never in a two-player lobby). One vote per response, on the clue just played,
+until the next response is judged — Final Jeopardy! rulings get a short last call before the game
+is reported. The host tallies and announces the verdict; a vote nobody settles in 45 seconds
+stands. The money moves on everyone's screen and in everyone's record; control of the board never
+does.
 
 The service is a Supabase project (Postgres, Auth, Realtime, two edge functions); the client is
 the vendored `supabase-js`. Details in `PUBLISHING.md`.
@@ -238,7 +249,10 @@ The game ships with small synthesized tones so it works out of the box. Drop fil
 `sounds/` to replace them (mp3, wav, ogg or m4a), named:
 
 `boardfill`, `select`, `lights`, `buzz`, `lockout`, `timeout`, `right`, `wrong`, `dd`, `fj`,
-`think` (the 30-second Final Jeopardy! track; without a file, an original built-in tune plays), `roundend`.
+`think` (the 30-second Final Jeopardy! track; without a file, an original built-in tune plays), `roundend`,
+and the success cues: `sweep` (you ran the category — all five clues right), `ddright` (your Daily
+Double was right), `fjright` (your Final Jeopardy! response was right), `win` (you won the game: a
+short original fanfare). Nothing plays for a loss.
 
 For example `sounds/timeout.mp3` or `sounds/think.wav`. Use royalty-free sounds; the show's
 own cues are Sony's.

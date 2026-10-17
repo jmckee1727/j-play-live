@@ -197,6 +197,10 @@ var JPAudio = (function() {
         fj:        'fj',          // Final Jeopardy! reveal
         think:     'think',       // 30-second Final Jeopardy! think track (loops until stopped)
         roundend:  'roundend',    // end-of-round signal
+        sweep:     'sweep',       // you ran the category (all five clues right)
+        ddright:   'ddright',     // your Daily Double was right
+        fjright:   'fjright',     // your Final Jeopardy! response was right
+        win:       'win',         // you won the game
     };
     const EXTS = [ 'mp3', 'wav', 'ogg', 'm4a' ];
 
@@ -304,7 +308,143 @@ var JPAudio = (function() {
           case 'roundend':
             tone(600, 250, 'sine', 0.15, 0); tone(450, 350, 'sine', 0.15, 0.22);
             break;
+          case 'sweep': case 'ddright':
+            playChime(false);
+            break;
+          case 'fjright':
+            playChime(true);
+            break;
+          case 'win':
+            playWinMusic();
+            break;
         }
+    }
+
+    // ---- success cues -------------------------------------------------------
+    // Original synthesized cues (none of the show's): a bell chime for running
+    // a category, a Daily Double or Final Jeopardy! answered right, and a short
+    // fanfare for winning the game. Files named sweep / ddright / fjright / win
+    // in sounds/ replace them.
+
+    // A struck bell: the fundamental and two bright, inharmonic partials that die away faster.
+    function bell(dest, freq, t0, dur, peak) {
+        let c = ctx;
+        [ [1, 1, dur], [2.76, 0.32, dur * 0.4], [5.4, 0.1, dur * 0.2] ].forEach(function(p) {
+            let o = c.createOscillator(), g = c.createGain();
+            o.type = 'sine';
+            o.frequency.setValueAtTime(freq * p[0], t0);
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.exponentialRampToValueAtTime(peak * p[1], t0 + 0.008);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + p[2]);
+            o.connect(g).connect(dest);
+            o.start(t0);
+            o.stop(t0 + p[2] + 0.05);
+        });
+    }
+    // A brassy note: detuned sawtooths through a low-pass filter that opens on the attack.
+    function brass(dest, freq, t0, dur, peak) {
+        let c = ctx;
+        let f = c.createBiquadFilter();
+        f.type = 'lowpass'; f.Q.value = 1.1;
+        f.frequency.setValueAtTime(freq * 1.5, t0);
+        f.frequency.linearRampToValueAtTime(Math.min(freq * 7, 9000), t0 + 0.05);
+        f.frequency.exponentialRampToValueAtTime(freq * 2.5, t0 + Math.max(0.1, dur));
+        let g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.03);
+        g.gain.setValueAtTime(peak, Math.max(t0 + 0.03, t0 + dur - 0.08));
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        [ [1, 'sawtooth', 1], [1.004, 'sawtooth', 0.55], [0.5, 'square', 0.2] ].forEach(function(p) {
+            let o = c.createOscillator(), og = c.createGain();
+            o.type = p[1];
+            o.frequency.setValueAtTime(freq * p[0], t0);
+            og.gain.value = p[2];
+            o.connect(og).connect(f);
+            o.start(t0);
+            o.stop(t0 + dur + 0.05);
+        });
+        f.connect(g).connect(dest);
+    }
+    // A timpani hit: a low sine whose pitch drops as it rings.
+    function drum(dest, freq, t0, dur, peak) {
+        let c = ctx, o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq * 1.7, t0);
+        o.frequency.exponentialRampToValueAtTime(freq, t0 + 0.07);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        o.connect(g).connect(dest);
+        o.start(t0);
+        o.stop(t0 + dur + 0.05);
+    }
+    // A cymbal: bright filtered noise that fades.
+    function cymbal(dest, t0, dur, peak) {
+        let c = ctx, len = Math.ceil(c.sampleRate * dur), buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        let src = c.createBufferSource();
+        src.buffer = buf;
+        let f = c.createBiquadFilter();
+        f.type = 'highpass'; f.frequency.value = 6000;
+        let g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        src.connect(f).connect(g).connect(dest);
+        src.start(t0);
+        src.stop(t0 + dur + 0.05);
+    }
+    function bus(c, level) {
+        let comp = c.createDynamicsCompressor();
+        comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.12;
+        let master = c.createGain();
+        master.gain.value = level;
+        master.connect(comp).connect(c.destination);
+        return master;
+    }
+
+    // A rising bell arpeggio (C E G C, and E on top for the big one) that rings out.
+    function playChime(big) {
+        let c = audioCtx();
+        if (!c) return;
+        let master = bus(c, 0.7);
+        let t0 = c.currentTime + 0.02;
+        let notes = big ? [ 72, 76, 79, 84, 88 ] : [ 72, 76, 79, 84 ];
+        let step = big ? 0.115 : 0.1;
+        notes.forEach(function(m, i) {
+            let last = i == notes.length - 1;
+            bell(master, midiHz(m), t0 + i * step, last ? (big ? 2.4 : 1.7) : 0.55, last ? 0.26 : 0.2);
+        });
+        // A soft octave under the top note, so the ring has some body.
+        bell(master, midiHz(notes[notes.length - 1] - 12), t0 + (notes.length - 1) * step, big ? 2.0 : 1.4, 0.09);
+        if (big) bell(master, midiHz(72), t0 + (notes.length - 1) * step + 0.05, 2.0, 0.07);
+    }
+
+    // A short original fanfare, about five seconds: three pickup notes to the
+    // tonic, a leap to the fifth, and a held top chord with timpani and cymbal.
+    const WIN_BPM = 128;
+    const WIN_FANFARE = [                    // [start beat, length in beats, notes (the first is the lead)]
+        [ 0,    0.45, [ 67 ] ], [ 0.5, 0.45, [ 67 ] ], [ 1.0, 0.45, [ 67 ] ],
+        [ 1.5,  1.4,  [ 72, 64, 55 ] ],
+        [ 3.0,  0.45, [ 74 ] ], [ 3.5, 0.45, [ 76 ] ],
+        [ 4.0,  2.4,  [ 79, 72, 67, 60 ] ],
+        [ 6.5,  0.45, [ 81 ] ], [ 7.0, 0.45, [ 83 ] ],
+        [ 7.5,  4.2,  [ 84, 79, 76, 72, 60 ] ],
+    ];
+    function playWinMusic() {
+        let c = audioCtx();
+        if (!c) return;
+        let master = bus(c, 0.5);
+        let beat = 60 / WIN_BPM, t0 = c.currentTime + 0.03;
+        WIN_FANFARE.forEach(function(ev) {
+            let start = t0 + ev[0] * beat, dur = ev[1] * beat;
+            ev[2].forEach(function(m, i) { brass(master, midiHz(m), start, dur, i == 0 ? 0.13 : 0.06); });
+        });
+        [ 0, 1.5, 4.0 ].forEach(function(b) { drum(master, 65.4, t0 + b * beat, 0.7, 0.45); });
+        drum(master, 65.4, t0 + 7.5 * beat, 1.6, 0.55);
+        drum(master, 49, t0 + 7.5 * beat + 0.02, 1.8, 0.3);
+        cymbal(master, t0 + 4.0 * beat, 0.7, 0.05);
+        cymbal(master, t0 + 7.5 * beat, 3.0, 0.11);
     }
 
     function play(name) {

@@ -2010,11 +2010,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
         G.phase = 'other';
         JPAudio.play('roundend');
-        showPanel('<h1>End of the ' + roundTitle(round) + '</h1>' + standingsTable() + '<p class="jp-note">Click or press ' + anyKeyHtml() + ' to continue.</p>').classList.add('jp-clickthrough');
+        roundEndPanel(round);
         setHint('');
         let e = await hostSaySkippable(roundEndLine(round), tok, 1);
         if (!alive(tok)) return;
         if (!e.skipped) await pause(2500, tok);
+    }
+
+    // The standings at the end of a round, big and centered.
+    function roundEndPanel(round) {
+        let rp = showPanel('<h1>End of the ' + roundTitle(round) + '</h1>' + standingsTable() + '<p class="jp-note">Click or press ' + anyKeyHtml() + ' to continue.</p>');
+        rp.classList.add('jp-clickthrough'); rp.classList.add('jp-roundend');
+        return rp;
     }
 
     // The host reads the six categories the way the show does: one at a time,
@@ -3442,7 +3449,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // Read-only view of the game state, for debugging in the console
     // (e.g. jpLiveDebug.state.scores) and for automated tests.
-    window.jpLiveDebug = { get state() { return G; }, get settings() { return S; }, parsePick: parsePick, parseWager: parseWager, coryatScore: coryatScore, standingsSentence: standingsSentence, roundOpeningLine: roundOpeningLine, showFinalStandings: showFinalStandings, rewindTo: rewindTo, clueInfo: clueInfo, mediaClue: mediaClue };
+    window.jpLiveDebug = { get state() { return G; }, get settings() { return S; }, parsePick: parsePick, parseWager: parseWager, coryatScore: coryatScore, standingsSentence: standingsSentence, roundOpeningLine: roundOpeningLine, showFinalStandings: showFinalStandings, showRoundEnd: function(r) { roundEndPanel(r); return 'ok'; }, rewindTo: rewindTo, clueInfo: clueInfo, mediaClue: mediaClue };
 
     // ---- high scores (this browser; kept in localStorage for j-archive.com) ----
     function loadScores() { try { return JSON.parse(localStorage.getItem('jpLiveScores') || '[]'); } catch (e) { return [ ]; } }

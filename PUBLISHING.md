@@ -66,7 +66,10 @@ The free plan covers it (two active projects per organization). What is there:
   message is keyed (clue, attempt, sender) and the clients' `waitFor` reads from an inbox. The
   host's `scores` messages carry a sequence number (a client ignores an older one), and the
   final `finished` message carries the host's standings and every vote verdict, so a client that
-  missed a message still ends with the same record.
+  missed a message still ends with the same record. `deliver()` stamps receipt as `rx`, never `at`:
+  the host's `lights` message names its moment in `at`, and until 0.13.1 the receipt stamp
+  overwrote it, so the others' lights came on at receipt (about half a second before the host's)
+  and their ring-in offsets ran against the wrong clock -- the host won most close races.
 - **Between clues** the host serializes everything (`live.js`, "between clues, online"): the
   controller's `pick` goes to the host, which answers with `startclue` (sequence-numbered) once
   every call made since the last clue has run as an *interlude* on every screen (`interlude` /

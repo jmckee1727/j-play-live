@@ -140,7 +140,7 @@ window.JPOnline = (function() {
     }
     function deliver(p) {
         if (!p || !p.t) return;
-        p.seq = ++seq; p.at = Date.now();
+        p.seq = ++seq; p.rx = Date.now();   // receipt time (never `at`: the host's lights message names its moment in `at`)
         mlog('<- ' + p.t + ' ' + JSON.stringify(p).slice(0, 120));
         if (p.t == 'ping' && user && hostId == user.id) { send('pong', { to: p.from, t0: p.t0, th: Date.now() }); return; }
         inbox.push(p); if (inbox.length > 300) inbox.shift();

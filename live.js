@@ -3200,6 +3200,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let at = await onlineLights(num, attempt, tok);
         if (at == null) return { type: 'timeout', lost: true };
         setLit(true); JPAudio.play('lights');
+        (G.online.lights || (G.online.lights = [ ])).push({ num: num, attempt: attempt, at: at, lit: JPOnline.hostNow() });   // for the tests: the same moment on every screen
         setTimer(S.buzzWindowSeconds, 'green');
         setHint(hostHere() || true ? 'Ring in: ' + ringInHint() + '.' : '');
         let me = G.online.me;

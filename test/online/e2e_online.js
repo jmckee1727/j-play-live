@@ -173,6 +173,12 @@ async function playGame(bots, label) {
     check(label + ': reversals void the responses that followed (' + cascades + ' seen)', cascadeOk, bad.join('; '));
   }
   if (PAUSE) check(label + ': a pause was asked for and voted on', vs.some(v => v[4] == 'pause'), votesAll[0].slice(0, 200));
+  // The lights: the host names one moment per race and every screen lights at it (all three browsers share this machine's clock).
+  const lights = await Promise.all(bots.map(b => b.inExt('JSON.stringify((jpLiveDebug.state.online && jpLiveDebug.state.online.lights) || [])').catch(() => '[]')));
+  const L = lights.map(x => { try { return JSON.parse(x); } catch (e) { return []; } });
+  let sameMoment = 0, races = 0, late = 0, worst = 0;
+  for (const a of L[0]) { races++; const others = L.slice(1).map(l => l.find(x => x.num == a.num && x.attempt == a.attempt)); if (others.every(o => o && o.at == a.at)) sameMoment++; for (const o of [a].concat(others)) if (o) { const d = o.lit - o.at; worst = Math.max(worst, Math.abs(d)); if (Math.abs(d) > 150) late++; } }
+  check(label + ': every race lit at the host-named moment on all screens (' + races + ' races, worst ' + worst + ' ms)', races > 20 && sameMoment == races && late == 0, 'same ' + sameMoment + '/' + races + ', off by >150 ms: ' + late);
   const panels = await Promise.all(bots.map(b => b.page.textContent('.jp-panel').catch(() => '')));
   try { await bots[0].page.screenshot({ path: OUT + '/on_final_' + label + '.png' }); } catch (e) { }
   return { parsed, panels };

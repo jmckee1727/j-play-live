@@ -10,7 +10,7 @@
 //   { op: 'ear-caps' }                        -> which models are cached, what's loaded
 //   { op: 'ear-load', size, device }          -> download (first time) and load; progress events stream back
 //   { op: 'ear-unload' }
-//   { op: 'ear-transcribe', pcm }             -> pcm: base64 16-bit mono 16 kHz -> { text }
+//   { op: 'ear-transcribe', pcm, prompt }     -> pcm: base64 16-bit mono 16 kHz; prompt: what the game expects (optional) -> { text }
 //   { op: 'ear-selftest', text, tts }         -> speak a phrase with the voice model, hear it back (for tests)
 //
 // Model files come from Hugging Face on first use and are cached by the
@@ -136,15 +136,49 @@ function cleanTranscript(text) {
     return t;
 }
 
+// A prompt -- what the game expects to hear on this clue: the category and the
+// correct response -- goes in as Whisper's "previous text", and tilts the model's
+// spelling toward it ("Ceres", not "series"; "Gauss", not "Gels"). It doesn't put
+// words in anyone's mouth: silence still comes back as silence, and a different
+// response still comes back as what it was (test/ear/prompt_test*.js). The prompt
+// comes back out at the head of the transcript and is cut off again.
+function promptTokens(prompt) {
+    try {
+        let tok = asr.tokenizer, gc = asr.model.generation_config;
+        let prev = tok.encode('<|startofprev|>', { add_special_tokens: false });
+        let words = tok.encode(' ' + prompt, { add_special_tokens: false });
+        if (!prev.length || !words.length || words.length > 180) return null;
+        let init = [ gc.decoder_start_token_id ];
+        if (gc.no_timestamps_token_id != null) init.push(gc.no_timestamps_token_id);
+        return prev.concat(words, init);
+    } catch (e) { return null; }
+}
+function stripPrompt(text, prompt) {
+    let t = String(text || ''), p = String(prompt || '').trim();
+    if (!p) return t;
+    let norm = function(x) { return x.replace(/\s+/g, ' ').trim(); };
+    let tn = norm(t), pn = norm(p);
+    if (tn.toLowerCase().startsWith(pn.toLowerCase())) return tn.slice(pn.length).trim();
+    // The tokenizer may have spaced it a little differently: drop as many leading words as the prompt has.
+    let n = pn.split(' ').length, words = tn.split(' ');
+    if (words.length > n && words.slice(0, n).join(' ').toLowerCase().replace(/[^a-z0-9]/g, '') == pn.toLowerCase().replace(/[^a-z0-9]/g, '')) return words.slice(n).join(' ');
+    return tn;
+}
+
 export function earTranscribe(opts) {
     if (!asr) return Promise.resolve({ ok: false, error: 'ear not loaded' });
     let audio = opts.pcm ? pcm16Base64ToFloat(opts.pcm) : (opts.audio || new Float32Array(0));
+    let prompt = String(opts.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 400);
     let job = queue.then(async function() {
         let t0 = performance.now();
         if (audio.length < 1600) return { ok: true, text: '', ms: 0 };
-        let out = await asr(audio, { max_new_tokens: 48, return_timestamps: false });
-        let text = cleanTranscript((out && out.text) || '');
-        return { ok: true, text: text, ms: Math.round(performance.now() - t0), seconds: audio.length / 16000 };
+        let gen = { max_new_tokens: 48, return_timestamps: false };
+        let ids = prompt ? promptTokens(prompt) : null;
+        if (ids) gen.decoder_input_ids = ids;
+        let out = await asr(audio, gen);
+        let raw = (out && out.text) || '';
+        let text = cleanTranscript(ids ? stripPrompt(raw, prompt) : raw);
+        return { ok: true, text: text, ms: Math.round(performance.now() - t0), seconds: audio.length / 16000, prompted: !!ids };
     });
     queue = job.catch(function() { });
     return job;

@@ -58,17 +58,28 @@ The free plan covers it (two active projects per organization). What is there:
   random game in 3000..max_game_id none of them has played), `dequeue`, `reroll_game`,
   `sync_played`, `note_max_game`, `room_state`; the `leaderboard` view.
 - **Realtime**: private broadcast channels `room:<id>`; policies on `realtime.messages` let
-  only a room's players send and receive. Broadcast delivery is not strictly ordered, so every
+  only a room's players send and receive. The Realtime tenant goes cold when nobody has opened a
+  channel for days, and the first players then wait minutes at "Joining the game…" (the 2026-10-24
+  playtest): the keep-alive workflow opens a channel daily, the extension opens a throwaway one as
+  soon as someone signs in or heads for a lobby (`JPOnline.warmup`), and the join retries for three
+  minutes. Broadcast delivery is not strictly ordered, so every
   message is keyed (clue, attempt, sender) and the clients' `waitFor` reads from an inbox. The
   host's `scores` messages carry a sequence number (a client ignores an older one), and the
   final `finished` message carries the host's standings and every vote verdict, so a client that
   missed a message still ends with the same record.
-- **Votes** (`vote` / `ballot` / `verdict` messages, all in `live.js`): a vote is keyed by the
-  response (`<clue>:<player>`, `fj:<player>`); the caller's own vote is implied; the host alone
-  tallies and sends the verdict (a majority of the players for a reversal to right, every other
-  player for a challenge to wrong, 45 s timeout = stands) and re-sends its standings; the other
-  clients change only their record of the response and take the host's money. The host settles
-  open votes before `finish_room`, after a six-second last call on the Final Jeopardy! rulings.
+- **Between clues** the host serializes everything (`live.js`, "between clues, online"): the
+  controller's `pick` goes to the host, which answers with `startclue` (sequence-numbered) once
+  every call made since the last clue has run as an *interlude* on every screen (`interlude` /
+  `interlude_end`, with the host's control and standings). Calls (`call` messages, kind `vote` or
+  `pause`) are queued on the host; a vote is keyed by the response (`<clue>:<player>`,
+  `fj:<player>`), the caller's own vote is implied, ballots are `ballot`, the host alone tallies
+  and sends `verdict` (a majority of the players for a reversal or a pause, every other player for
+  a challenge, 45 s timeout = stands). A reversal to right voids the later responses on that clue
+  (outcome `none`, `voided` = the vote) and sets control; the other clients change only their
+  record and take the host's money. A granted pause is `paused` … `resume` (anyone) … `resumed`.
+  Final Jeopardy!: `fjdone` from everyone, then a `lastcall` interlude before `finish_room`.
+- **Lobby**: `room_players.ready` / `.mic` via `set_player_status`; `start_room` refuses until every
+  other player is ready (migration `jplay_lobby_ready_mic`).
 - **Keys**: the extension ships the project URL and the *publishable* key (public by design;
   row-level security is what protects the data). The service-role key lives only in the edge
   functions' environment. Never put it in the extension.
@@ -76,8 +87,9 @@ The free plan covers it (two active projects per organization). What is there:
   `jplay_realtime_policies`, `jplay_membership_helpers`); the SQL is in the dashboard's
   migration history. `test/online/api.js` and `test/online/e2e_online.js` (three browsers with
   the extension, a lobby game and a ranked match against the live service; `VOTE=1` has the bots
-  call votes on their wrong rulings and cast ballots) are the tests; the test accounts are
-  `jplay-test-{ann,bob,cy}@example.com`.
+  call votes on their wrong rulings and cast ballots, `PAUSE=1` asks for a pause) are the tests;
+  the test accounts are `jplay-test-{ann,bob,cy}@example.com`. The tests live in `test/` (run
+  `npm install` there and `./fetch_fixture.sh` for the offline harness's page).
 - **Abuse**: an account is an email and a name; there is no email verification, so an abuser can
   make accounts freely. If that becomes a problem, turn on email confirmation (or a captcha) in
   the dashboard and switch the client to the auth service's own sign-up. The correct responses are

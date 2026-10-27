@@ -267,7 +267,7 @@ var JPEar = (function() {
                 let t0 = performance.now();
                 let secs = (audio.length / RATE).toFixed(1);
                 log('utterance ' + secs + ' s -> recognizer');
-                rpc('ear-transcribe', { pcm: floatToPcm16Base64(audio) }).then(function(r) {
+                rpc('ear-transcribe', { pcm: floatToPcm16Base64(audio), prompt: opts.prompt || '' }).then(function(r) {
                     pending--;
                     let t = String(r.text || '').trim();
                     log('heard "' + t + '" in ' + Math.round(performance.now() - t0) + ' ms');

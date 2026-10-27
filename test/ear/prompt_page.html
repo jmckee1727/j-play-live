@@ -1,0 +1,36 @@
+<!doctype html><html><body><script type="module">
+import { pipeline, env } from '/vendor/transformers.min.js';
+env.backends.onnx.wasm.wasmPaths = '/vendor/';
+env.allowLocalModels = false;
+window.log = [];
+window.ready = (async () => {
+  window.asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-base.en', { dtype: { encoder_model: 'fp32', decoder_model_merged: 'q8' }, device: 'wasm', progress_callback: p => { if (p.status == 'done') window.log.push(p.file); } });
+  return 'loaded';
+})();
+window.loadWav = async (url) => {
+  const buf = await (await fetch(url)).arrayBuffer();
+  const ac = new OfflineAudioContext(1, 16000, 16000);
+  const dec = await ac.decodeAudioData(buf);
+  const n = Math.ceil(dec.duration * 16000);
+  const oc = new OfflineAudioContext(1, n, 16000);
+  const src = oc.createBufferSource(); src.buffer = dec; src.connect(oc.destination); src.start(0);
+  const out = await oc.startRendering();
+  return out.getChannelData(0);
+};
+window.promptIds = (prompt) => {
+  const tok = window.asr.tokenizer, gc = window.asr.model.generation_config;
+  const prev = tok.encode('<|startofprev|>', { add_special_tokens: false });
+  const words = tok.encode(' ' + prompt, { add_special_tokens: false });
+  const init = [ gc.decoder_start_token_id ];
+  if (gc.no_timestamps_token_id != null) init.push(gc.no_timestamps_token_id);
+  return { ids: prev.concat(words, init), prev, words, init };
+};
+window.transcribe = async (url, prompt) => {
+  const audio = await window.loadWav(url);
+  const opts = { max_new_tokens: 48, return_timestamps: false };
+  if (prompt) opts.decoder_input_ids = window.promptIds(prompt).ids;
+  const t0 = performance.now();
+  const out = await window.asr(audio, opts);
+  return { text: out.text, ms: Math.round(performance.now() - t0) };
+};
+</script></body></html>

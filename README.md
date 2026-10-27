@@ -51,7 +51,11 @@ the same every time, doesn't depend on Google's speech service, and nothing you 
 machine. Under **Recognition** in Settings, click **Download the studio ear**; it loads with each
 game. Whichever recognizer is in use, the game only *listens* when it's your turn to speak: after
 you ring in (in Final Jeopardy! too), while you pick clues by voice on your own board, and while
-you wager on your Daily Double; never while someone else has the clue. The first phrase with
+you wager on your Daily Double; never while someone else has the clue. The studio ear is told what
+the clue expects — the category and the correct response go in as Whisper's "previous text" — so
+it spells a response the way the archive does ("Ceres", not "series"; "Gauss", not "Gels"); it
+doesn't put words in your mouth: silence stays silence and a different response comes out as what
+it was (`test/ear/prompt_test*.js` check both). The first phrase with
 something in it is your response and is judged on the spot, right or wrong; a bare "What is…" or
 an "um" isn't a response yet, so listening continues. The **Microphone** setting decides what
 happens to the device in between: *on for the whole game* (the default) holds the stream open from
@@ -134,6 +138,7 @@ are the archived ones. The category is shown across the top of every clue.
 | `clock.js` | `JPClock`: a pausable game clock. Every game timer runs on it, which is what makes Pause freeze the game mid-clue. |
 | `audio.js` | `JPAudio`: text-to-speech (`speak`), sound effects (`play`, with `sounds/` overrides), speech recognition (`listen`). |
 | `judge.js` | `JPJudge`: decides whether your response matches the archive's correct response — "what is" optional, articles ignored, surnames accepted, typos forgiven, and homophones heard the recognizer's way ("low" for lo, "Shawn" for Sean) folded by sound and by a table of the irregular ones. |
+| `test/` | The test rigs: `harness.js` plays whole games in jsdom (several modes), `online/e2e_online.js` runs three browsers against the live service, `ear/prompt_test*.js` measure the studio ear's prompting. `npm install` in `test/`, then `./fetch_fixture.sh`. |
 | `interpret.js` | `JPInterpret`: reads a clue like a contestant to phrase the response ("Who is" / "Who are" / "What is" / "What are"), from the noun after "this", pronouns, the category and plurality. |
 | `reader.js` | `JPReader`: makes archive text speakable — abbreviations ("cont. U.S.", "pres."), Roman numerals ("Henry VIII"), decades ("the '60s"), dashes, ALL-CAPS categories, bracketed asides. |
 | `wagers.js` | `JPWagers`: how the contestants wager. Final Jeopardy! uses the standard game theory (leader shores up or keeps a lock, second place beats the leader by $1 / covers / goes all in, everyone else all in); Daily Doubles use a sensible heuristic. The reasoning is shown at the reveal. |
@@ -190,16 +195,34 @@ An online game can't be paused or rewound; leaving it lets the others go on. The
 responses are on every player's page, so this is a game of trust among friends, with ratings and
 a record to protect: statistical checks and reports are the plan for the ranked ladder.
 
-**Votes.** Nobody is the referee online, so the y/n overrule becomes a vote. Ruled wrong when you
-were right? A box in the corner offers **Call a vote** (or press `y`): the others see what you
-said and the correct response and vote yes or no (`y` / `n` or the buttons); a majority of the
-players reverses it, your own vote included — so one of the other two in a three-player game.
-The reverse exists too: anyone can **challenge** a response ruled right (`n`), and every other
-player must agree (never in a two-player lobby). One vote per response, on the clue just played,
-until the next response is judged — Final Jeopardy! rulings get a short last call before the game
-is reported. The host tallies and announces the verdict; a vote nobody settles in 45 seconds
-stands. The money moves on everyone's screen and in everyone's record; control of the board never
-does.
+**Votes.** Nobody is the referee online, so the y/n overrule becomes a vote, and a vote
+interrupts the game for everyone. Between clues — after the rebounds, before the next pick — the
+line at the foot of the screen offers **I was right on the last clue** (`y`) if you were ruled
+wrong, and **Challenge** (`n`) if someone else was ruled right. A call brings up the vote on every
+screen: what was said, the correct response, Yes / No (`y` / `n`). A reversal passes with a majority
+of the players, the caller's own vote included — one of the other two in a three-player game; a
+challenge needs every other player (never in a two-player lobby). One vote per response, on the
+clue just played only: once the next clue starts, that's that. A reversal takes back what anyone —
+the archive's contestants and the other players alike — made on that clue after the reinstated
+response, and gives the reinstated player the board. The host tallies and announces; a vote
+nobody settles in 45 seconds stands. Final Jeopardy! rulings get a last call before the game is
+reported.
+
+**Pauses.** An online game can't be paused by one person, but anyone can ask for one (`p`, or the
+button at the foot of the screen, any time): a majority grants it, it takes effect between clues
+(right away if the game is between clues, otherwise after the current clue), and anyone resumes.
+
+**The lobby.** The host's settings (contestants, speed, timing) apply to everyone; the others see
+them and can't change them (their own settings are for their own games). Each player has a
+**Test my mic** button whose result shows beside their name for all to see, and a **Ready** button;
+the host's Start lights up when everyone else is ready. The code and the invite link copy with one
+click.
+
+**Ring-ins.** The lights open at one host-named instant on every screen (clocks are synced to the
+host's at the start and again now and then). When you press, your podium lights and the buzzer
+sounds at once; the host's word on who was first follows in a moment, and if it wasn't you the
+light moves and the line says who beat you. While the slowest voice is still reading, the line says
+whose it's waiting for.
 
 The service is a Supabase project (Postgres, Auth, Realtime, two edge functions); the client is
 the vendored `supabase-js`. Details in `PUBLISHING.md`.

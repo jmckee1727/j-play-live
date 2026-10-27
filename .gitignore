@@ -1,2 +1,4 @@
 dist/
 .DS_Store
+Claude outputs/*.txt
+Claude outputs/*.md

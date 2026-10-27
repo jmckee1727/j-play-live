@@ -1,0 +1,9 @@
+{
+  "name": "j-play-live-tests",
+  "private": true,
+  "description": "Test rigs for j-play-live: a jsdom harness that plays whole games, Playwright runs with the extension loaded, and a three-browser online test against the live service.",
+  "dependencies": {
+    "jsdom": "^24.0.0",
+    "playwright": "^1.63.0"
+  }
+}

@@ -87,6 +87,7 @@ window.JPOnline = (function() {
     function roomState(id) { return rpc('room_state', { p_room: id }); }
     function setRoom(id, gameId, settings) { return rpc('set_room', { p_room: id, p_game: gameId, p_settings: settings }); }
     function startRoom(id) { return rpc('start_room', { p_room: id }); }
+    function setPlayerStatus(id, ready, mic) { return rpc('set_player_status', { p_room: id, p_ready: ready, p_mic: mic }); }
     function leaveRoom(id) { return rpc('leave_room', { p_room: id }); }
     function abandonRoom(id) { return rpc('abandon_room', { p_room: id }); }
     function finishRoom(id, results) { return rpc('finish_room', { p_room: id, p_results: results }); }
@@ -123,6 +124,20 @@ window.JPOnline = (function() {
         });
     }
     function disconnect() { if (channel) { try { client.removeChannel(channel); } catch (e) { } } channel = null; roomId = null; listeners = [ ]; }
+    // The realtime service goes cold when nobody has opened a channel for days, and the
+    // first players then wait minutes at "Joining the game…" while it comes up. Opening a
+    // throwaway public channel as soon as someone heads for online play wakes it early.
+    let warmed = null;
+    function warmup() {
+        if (warmed || !client) return warmed || Promise.resolve(false);
+        warmed = new Promise(function(resolve) {
+            let ch = client.channel('warmup-' + Math.random().toString(36).slice(2, 8)), done = false;
+            let finish = function(ok) { if (done) return; done = true; try { client.removeChannel(ch); } catch (e) { } mlog('warmup ' + (ok ? 'ok' : 'failed')); if (!ok) warmed = null; resolve(ok); };
+            ch.subscribe(function(status) { if (status == 'SUBSCRIBED') finish(true); else if (status == 'CHANNEL_ERROR' || status == 'TIMED_OUT' || status == 'CLOSED') finish(false); });
+            setTimeout(function() { finish(false); }, 20000);
+        });
+        return warmed;
+    }
     function deliver(p) {
         if (!p || !p.t) return;
         p.seq = ++seq; p.at = Date.now();
@@ -139,13 +154,31 @@ window.JPOnline = (function() {
     }
     function on(type, fn, pred) { let l = { type: type, fn: fn, pred: pred }; listeners.push(l); return function() { let i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1); }; }
     // The first unconsumed message of that type matching pred, waiting up to timeoutMs; null on timeout.
+    // The promise has a cancel(): it stops listening without consuming anything and resolves null
+    // (for a wait that lost a race -- a waiter left behind would swallow the next message).
     function waitFor(type, pred, timeoutMs) {
-        for (let p of inbox) if (!p.used && p.t == type && (!pred || pred(p))) { p.used = true; return Promise.resolve(p); }
-        return new Promise(function(resolve) {
-            let off = null, t = null;
-            off = on(type, function(p) { if (p.used) return; p.used = true; if (t) clearTimeout(t); off(); resolve(p); }, pred);
-            t = setTimeout(function() { off(); resolve(null); }, timeoutMs || 30000);
+        for (let p of inbox) if (!p.used && p.t == type && (!pred || pred(p))) { p.used = true; let r = Promise.resolve(p); r.cancel = function() { }; return r; }
+        let off = null, t = null, done = false, res = null;
+        let pr = new Promise(function(resolve) {
+            res = resolve;
+            off = on(type, function(p) { if (done || p.used) return; done = true; p.used = true; if (t) clearTimeout(t); off(); resolve(p); }, pred);
+            t = setTimeout(function() { if (done) return; done = true; off(); resolve(null); }, timeoutMs == null ? 30000 : timeoutMs);
         });
+        pr.cancel = function() { if (done) return; done = true; if (t) clearTimeout(t); if (off) off(); res(null); };
+        return pr;
+    }
+    // The first unconsumed message of any of several types matching pred (which sees p.t); null on timeout.
+    function waitForAny(types, pred, timeoutMs) {
+        for (let p of inbox) if (!p.used && types.indexOf(p.t) >= 0 && (!pred || pred(p))) { p.used = true; let r = Promise.resolve(p); r.cancel = function() { }; return r; }
+        let offs = [ ], t = null, done = false, res = null;
+        let pr = new Promise(function(resolve) {
+            res = resolve;
+            let take = function(p) { if (done || p.used) return; done = true; p.used = true; if (t) clearTimeout(t); offs.forEach(function(f) { f(); }); resolve(p); };
+            for (let ty of types) offs.push(on(ty, take, pred));
+            t = setTimeout(function() { if (done) return; done = true; offs.forEach(function(f) { f(); }); resolve(null); }, timeoutMs == null ? 30000 : timeoutMs);
+        });
+        pr.cancel = function() { if (done) return; done = true; if (t) clearTimeout(t); offs.forEach(function(f) { f(); }); res(null); };
+        return pr;
     }
     // Everything unconsumed of a type (e.g. all the wagers that have come in).
     function drain(type, pred) { let out = [ ]; for (let p of inbox) if (!p.used && p.t == type && (!pred || pred(p))) { p.used = true; out.push(p); } return out; }
@@ -162,7 +195,7 @@ window.JPOnline = (function() {
             if (pong) { let rtt = Date.now() - t0; let off = pong.th - (t0 + rtt / 2); if (!best || rtt < best.rtt) best = { rtt: rtt, off: off }; }
             await new Promise(function(r) { setTimeout(r, 250); });
         }
-        offset = best ? best.off : 0;
+        if (best || offset == 0) offset = best ? best.off : 0;   // a re-sync that got no answer keeps the old offset
         mlog('clock offset ' + offset + ' ms' + (best ? ' (rtt ' + best.rtt + ')' : ' (no pong)'));
         return offset;
     }
@@ -172,9 +205,9 @@ window.JPOnline = (function() {
         available: available, init: init, get user() { return user; }, get profile() { return profile; }, get signedIn() { return !!user; },
         signUp: signUp, signIn: signIn, signOut: signOut, deleteAccount: deleteAccount, loadProfile: loadProfile, rename: rename, rpc: rpc,
         syncUp: syncUp, myResults: myResults, leaderboard: leaderboard,
-        createRoom: createRoom, joinRoom: joinRoom, roomState: roomState, setRoom: setRoom, startRoom: startRoom, leaveRoom: leaveRoom, abandonRoom: abandonRoom, finishRoom: finishRoom,
+        createRoom: createRoom, setPlayerStatus: setPlayerStatus, joinRoom: joinRoom, roomState: roomState, setRoom: setRoom, startRoom: startRoom, leaveRoom: leaveRoom, abandonRoom: abandonRoom, finishRoom: finishRoom,
         enqueue: enqueue, matchMe: matchMe, dequeue: dequeue, reroll: reroll, noteMaxGame: noteMaxGame,
-        connect: connect, disconnect: disconnect, send: send, on: on, waitFor: waitFor, drain: drain, isPresent: isPresent, presence: presence, syncClock: syncClock, hostNow: hostNow,
+        connect: connect, warmup: warmup, disconnect: disconnect, send: send, on: on, waitFor: waitFor, waitForAny: waitForAny, drain: drain, get log() { return log; }, isPresent: isPresent, presence: presence, syncClock: syncClock, hostNow: hostNow,
         get roomId() { return roomId; }, get hostId() { return hostId; }, log: log,
     };
 })();

@@ -1,0 +1,45 @@
+// Screenshots of the online panels (vote, verdict, last call, paused) and the offers line, on a synthesized state.
+const { chromium } = require('playwright');
+const fs = require('fs'); const path = require('path');
+const EXT = path.resolve(__dirname, '..');
+const OUT = process.env.OUT || '/tmp/jpl-shots';
+const html = fs.readFileSync(path.join(__dirname, 'fixtures', 'game9537.html'), 'utf8');
+fs.mkdirSync(OUT, { recursive: true });
+(async () => {
+  const dir = '/tmp/pw-shots-votes'; fs.rmSync(dir, { recursive: true, force: true });
+  const ctx = await chromium.launchPersistentContext(dir, { channel: 'chromium', headless: true, executablePath: '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome', args: ['--disable-extensions-except=' + EXT, '--load-extension=' + EXT, '--no-proxy-server'], ignoreHTTPSErrors: true, viewport: { width: 1600, height: 900 } });
+  const page = await ctx.newPage();
+  await page.route('https://j-archive.com/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: html }));
+  const cdp = await ctx.newCDPSession(page); const worlds = [];
+  cdp.on('Runtime.executionContextCreated', e => { if (/J-Play Live/.test(e.context.name)) worlds.push(e.context.id); });
+  await cdp.send('Runtime.enable');
+  const inExt = async expr => { for (let i = worlds.length - 1; i >= 0; i--) { try { const r = await cdp.send('Runtime.evaluate', { expression: expr, contextId: worlds[i], returnByValue: true }); if (r.exceptionDetails) return 'EXC ' + JSON.stringify(r.exceptionDetails).slice(0, 300); if (r.result && r.result.value !== undefined) return r.result.value; } catch (e) { } } return null; };
+  await page.goto('https://j-archive.com/showgame.php?game_id=9537');
+  await page.waitForSelector('#live_btn');
+  await page.evaluate(() => localStorage.setItem('jpLiveSettings', JSON.stringify({ voiceEngine: 'system', earEngine: 'chrome', readCategories: false, sfx: false, contestantVoices: false, micMode: 'off', settingsVersion: 6, onboardedVoice: true, players: [{ name: 'You', key: ' ' }], playerCount: 1, mousePlayer: 0, contestantsOn: false })));
+  await page.reload(); await page.waitForSelector('#live_btn');
+  await page.click('#live_btn'); await page.waitForSelector('.jp-start'); await page.click('.jp-start');
+  await page.waitForSelector('.jp-cell.jp-pickable', { timeout: 30000 });
+  const setup = `(function() {
+    var G = jpLiveDebug.state;
+    G.online = { players: [{ user_id: 'a' }, { user_id: 'b' }, { user_id: 'c' }], byId: { a: 'Ann', b: 'Bob', c: 'You' }, byName: { Ann: 'a', Bob: 'b', You: 'c' }, me: 'You', myId: 'c', hostId: 'a', host: false, mode: 'custom', votes: { }, gone: { }, names: ['Ann', 'Bob', 'You'], calls: [] };
+    G.humans = ['Ann', 'Bob', 'You']; G.phase = 'pick'; G.online.lastClueNum = 7;
+    G.results = [ { id: 0, kind: 'clue', num: 7, round: 'J', category: 'TALK LIKE A PIRATE', value: 600, amount: 600, who: 'You', said: 'what is a cutlass', correct: 'a cutlass', outcome: 'wrong', applied: -600 }, { id: 1, kind: 'clue', num: 7, round: 'J', category: 'TALK LIKE A PIRATE', value: 600, amount: 600, who: 'Bob', said: 'what is a cutlass', correct: 'a cutlass', outcome: 'right', applied: 600 } ];
+    return 'ok';
+  })()`;
+  console.log('setup:', await inExt(setup));
+  console.log('offers:', await inExt('jpLiveDebug.offers(); "ok"'));
+  await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/offers.png' });
+  const v = `{ vid: '7:Ann', who: 'Ann', want: 'right', callerId: 'a', caller: 'Ann', said: 'what is a cutlass', correct: 'a cutlass', label: 'TALK LIKE A PIRATE for $600', ballots: { a: true }, verdict: null, yes: 0, no: 0, of: 3, at: Date.now(), timer: null }`;
+  console.log('vote:', await inExt('jpLiveDebug.votePanel(' + v + '); "ok"'));
+  await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/vote_open.png' });
+  console.log('verdict:', await inExt('(function() { var x = ' + v + '; x.verdict = "right"; x.yes = 2; x.no = 1; jpLiveDebug.votePanel(x); return "ok"; })()'));
+  await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/vote_verdict.png' });
+  console.log('pause vote:', await inExt('(function() { var x = ' + v + '; x.vid = "pause:3"; x.want = "pause"; x.who = "Ann"; jpLiveDebug.votePanel(x); return "ok"; })()'));
+  await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/vote_pause.png' });
+  console.log('lastcall:', await inExt('jpLiveDebug.lastCallPanel(Date.now() + 8000); "ok"'));
+  await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/lastcall.png' });
+  console.log('paused:', await inExt('jpLiveDebug.pausedPanel("Ann"); "ok"'));
+  await page.waitForTimeout(300); await page.screenshot({ path: OUT + '/paused.png' });
+  await ctx.close(); console.log('done');
+})().catch(e => { console.error('ERR', e); process.exit(1); });

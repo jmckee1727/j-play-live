@@ -89,7 +89,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         if (S.mediaCredit == 'none') return 0;
         return Math.round(value / 2 / 100) * 100 || Math.round(value / 2);
     }
-    function creditNote(credit, value) { return credit == value ? '' : ' <span class="jp-note">(' + (credit ? 'half credit' : 'no credit') + ': media missing)</span>'; }
+    function creditNote(credit, value) { return credit == value ? '' : ' <span class="jp-note">(' + (credit ? 'half credit' : 'no credit') + ' for the show\'s contestants: media missing)</span>'; }
     const HOST_WRONG = [ 'No.', 'Sorry, no.', 'That is incorrect.', 'No, sorry.' ];
 
     let S = Object.assign({ }, DEFAULTS);
@@ -398,7 +398,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         root.innerHTML =
             '<div class="jp-top"><div class="jp-round"></div><div class="jp-cat"></div><div class="jp-val"></div>' +
             '<div class="jp-timer"><div class="jp-timer-fill"></div></div></div>' +
-            '<div class="jp-stage"></div><div class="jp-votes" style="display:none"></div>' +
+            '<div class="jp-stage"></div>' +
             '<div class="jp-answer"><div class="jp-mic"></div><input class="jp-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type your response and press Enter">' +
             '<div class="jp-heard"></div></div>' +
             '<div class="jp-podiums"></div>' +
@@ -418,7 +418,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             heard: root.querySelector('.jp-heard'),
             podiums: root.querySelector('.jp-podiums'),
             hint: root.querySelector('.jp-hint'),
-            votes: root.querySelector('.jp-votes'),
         };
         watchClueSize();
         root.querySelector('.jp-pause-btn').onclick = function() { showPauseMenu(); };
@@ -431,7 +430,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         function clickable(target) {
             if (pauseEl) return false;
             if (!target || !target.closest) return false;
-            if (target.closest('a, button, input, select, textarea, label, option, .jp-foot, .jp-dialog, .jp-votes, .jp-cell.jp-pickable')) return false;
+            if (target.closest('a, button, input, select, textarea, label, option, .jp-foot, .jp-dialog, .jp-cell.jp-pickable')) return false;
             let panel = target.closest('.jp-panel');
             if (panel && !panel.classList.contains('jp-clickthrough')) return false;
             return true;
@@ -560,9 +559,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             // A strip at the foot of the clue, where every clue keeps room for it: you should know before you ring in.
             let kind = kinds.image && !kinds.audio && !kinds.video ? 'picture' : kinds.audio && !kinds.image && !kinds.video ? 'audio' : kinds.video && !kinds.image && !kinds.audio ? 'video' : 'media';
             let what = r.missing < r.total ? 'some media missing' : r.missing > 1 && kind == 'picture' ? 'missing ' + r.missing + ' pictures' : r.missing > 1 ? 'missing ' + kind + ' (' + r.missing + ' files)' : 'missing ' + kind;
-            let credit = S.mediaCredit == 'none' ? 'contestants get no credit' : S.mediaCredit == 'full' ? 'scored as on TV' : 'contestants get half credit';
+            // The credit rule is about the show's contestants (whose archived responses are
+            // what's scored); with none of them playing there is nothing to say about it.
+            let credit = !realNames().length ? '' : S.mediaCredit == 'none' ? 'the show\'s contestants get no credit' : S.mediaCredit == 'full' ? 'scored as on TV' : 'the show\'s contestants get half credit';
             let old = clueEl.querySelector('.jp-clue-nomedia'); if (old) old.remove();
-            let band = h('div', 'jp-clue-nomedia', '<span class="jp-clue-nomedia-head">Media clue:</span> <span class="jp-clue-nomedia-what">' + esc(what) + ' — ' + credit + '</span>');
+            let band = h('div', 'jp-clue-nomedia', '<span class="jp-clue-nomedia-head">Media clue:</span> <span class="jp-clue-nomedia-what">' + esc(what) + (credit ? ' — ' + credit : '') + '</span>');
             let strip = clueEl.querySelector('.jp-clue-cat');
             if (strip) strip.appendChild(band); else clueEl.insertBefore(band, clueEl.firstChild);   // right under the category, before the clue is read
         }
@@ -970,6 +971,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
           case 'n': case 'N': case '-':
             if (handlers.override) { e.preventDefault(); handlers.override(false); }
             else if (online()) { e.preventDefault(); voteKey(false); }
+            break;
+          case 'p': case 'P':
+            if (online()) { e.preventDefault(); callPause(); }
             break;
         }
     }
@@ -1533,6 +1537,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             slot.innerHTML = accountBox();
             bindAccountBox(panel, showSetup);
             if (JPOnline.signedIn && !onlineSynced) { onlineSynced = true; syncOnline(); }
+            if (JPOnline.signedIn) JPOnline.warmup();                       // wake the realtime service before anyone needs it
         });
         if (typeof JPPlayed != 'undefined') JPPlayed.get(gameId(), function(rec) {
             if (!rec || !panel.isConnected || panel.querySelector('.jp-played-before')) return;
@@ -1803,7 +1808,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.hstats = { };
         G.stats = { buzzWins: 0, buzzLost: 0, lockouts: 0, answered: 0, correct: 0, wrong: 0, clues: 0 };
         G.winCue = false;
-        if (online()) { G.online.votes = { }; G.online.scoresSeq = 0; }
+        if (online()) Object.assign(G.online, { votes: { }, scoresSeq: 0, clueSeq: 0, interludeSeq: 0, calls: [ ], calledVids: { }, lastClueNum: null, pausePending: false, lastCall: false, interlude: null });
         // The returning champion (leftmost podium on J! Archive) picks first; with no contestants, the first human.
         G.control = realNames()[0] || humans()[0];
         renderPodiums();
@@ -1966,7 +1971,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (!remaining.length) break;
             G.phase = 'pick';
             let num;
-            if (remaining.length == 1) {
+            if (online()) {
+                // The host says when a clue starts, after any vote or pause called since the last one.
+                num = await betweenCluesOnline(tok, round, remaining);
+                if (!alive(tok)) return;
+                if (num == null) { onlineLost(); return; }
+                if (remaining.length == 1) {
+                    let info = clueInfo(num);
+                    setHint('The last clue of the round.');
+                    await say('And now, the last clue of the round: ' + JPReader.categoryToSpeech(info.category.name) + ' for ' + money(info.value) + '.', tok);
+                    if (!alive(tok)) return;
+                } else if (!isMe(G.control)) { await sleep(400, tok); if (!alive(tok)) return; }
+            } else if (remaining.length == 1) {
                 // The last clue picks itself; the host announces it, whoever has the board.
                 num = remaining[0];
                 renderBoard(round, false);
@@ -1978,23 +1994,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (!alive(tok)) return;
                 await sleep(250, tok);
                 if (!alive(tok)) return;
-            } else if (isHuman(G.control) && online() && !isMe(G.control)) {
-                renderBoard(round, false);
-                setHint('<b>' + esc(G.control) + '</b> has control and is picking…');
-                let ev = await fromPlayerOrForce('pick', G.control, function(p) { return remaining.indexOf(p.num) >= 0; }, 30000, { num: remaining[0], round: round });
-                if (!alive(tok)) return;
-                if (!ev) { onlineLost(); return; }
-                num = ev.num;
-                let cell = boardCell(num);
-                if (cell) cell.classList.add('jp-picking');
-                await sleep(400, tok);
-                if (!alive(tok)) return;
             } else if (isHuman(G.control)) {
                 setHint('<b>' + (G.control == YOU ? 'You have' : esc(G.control) + ', you have') + ' control.</b> Click a clue on the board.');
                 renderBoard(round, true);
                 num = await userPick(tok);
                 if (!alive(tok)) return;
-                if (online()) JPOnline.send('pick', { num: num, round: round });
             } else {
                 num = remaining[0]; // broadcast order
                 renderBoard(round, false);
@@ -2216,9 +2220,11 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
     function userPick(tok) {
         let useVoice = S.voicePick && S.answerMode == 'speech' && JPAudio.recognitionSupported();
-        setHint('<b>' + (G.control == YOU || !isHuman(G.control) ? 'You have' : esc(G.control) + ', you have') + ' control.</b> ' + (useVoice ? 'Say a category and an amount ("Science for 600"), or click a clue.' : 'Click a clue on the board.') + (useVoice ? ' <span class="jp-heard-pick jp-note"></span>' : ''));
-        return new Promise(function(resolve) {
+        setHint('<b>' + (G.control == YOU || !isHuman(G.control) ? 'You have' : esc(G.control) + ', you have') + ' control.</b> ' + (useVoice ? 'Say a category and an amount ("Science for 600"), or click a clue.' : 'Click a clue on the board.') + (useVoice ? ' <span class="jp-heard-pick jp-note"></span>' : '') + (online() ? callOffersHtml() : ''));
+        let cancelFn = null;
+        let p = new Promise(function(resolve) {
             let done = false, current = null;
+            cancelFn = function() { finish(null); };
             function finish(n) {
                 if (done) return;
                 done = true;
@@ -2250,6 +2256,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 }
             })();
         });
+        p.cancel = function() { if (cancelFn) cancelFn(); };   // an online interlude (a vote, a pause) interrupts the pick; it starts over after
+        return p;
     }
 
     // --------------------------------------------------------- one clue
@@ -2261,7 +2269,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.pendingControl = false;
         G.played[num] = true;
         G.stats.clues++;
-        if (online()) G.online.attempt = 0;
+        if (online()) { G.online.attempt = 0; G.online.lastClueNum = num; }
         handlers.override = null;
         clearPodiumLines();
         clearOuts();
@@ -2318,7 +2326,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (ev.type == 'user') {
                 let who = ev.who;
                 G.stats.buzzWins++; hstat(who, 'buzzWins');
-                JPAudio.play('buzz');
+                if (!(online() && G.online.localBuzz && isMe(who))) JPAudio.play('buzz');   // yours already sounded when you pressed
+                if (online() && G.online.localBuzz && !isMe(who)) setHint('<b>' + esc(who) + '</b> beat you to it.');
                 lightPodium(who);
                 setLit(false);
                 let res = await userAnswers(info, S.answerSeconds, tok, info.value, who);
@@ -2348,6 +2357,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             } else if (ev.type == 'contestant') {
                 if (next && !userOut()) G.stats.buzzLost++;
                 JPAudio.play('buzz');
+                if (online() && G.online.localBuzz) setHint('<b>' + esc(ev.who) + '</b> beat you to it.');
                 lightPodium(ev.who);
                 setLit(false);
                 responded[ev.who] = true;
@@ -2387,6 +2397,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     }
                 }
             } else { // timeout
+                if (online() && G.online.localBuzz) setHint('Too late — the window had closed.');
                 await revealCorrect(info, tok, false);
                 resolved = true;
             }
@@ -2404,7 +2415,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         setLit(false);
         clearTimer();
         lightPodium(null);
-        setHint('Click or press ' + anyKeyHtml() + ' to continue.');
+        if (online()) { setHint(callOffersHtml()); bindCallOffers(); } else setHint('Click or press ' + anyKeyHtml() + ' to continue.');
         await pause(S.autoAdvanceMs, tok);
         showAnswerStrip(false);
     }
@@ -2519,7 +2530,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     if (remaining > 600) startListening(remaining); else finish(U.input.value);
                 });
             }
-            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: true })); }
+            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: true, prompt: earPrompt(info) })); }
             // The recognizer can't be paused, so stop it on pause and start a
             // fresh one for the remaining time on resume.
             function onPauseAnswer() { if (listener) { let l = listener; listener = null; l.stop(); } }
@@ -2566,9 +2577,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
         function show() {
             let ok = rec.outcome == 'right', none = rec.outcome == 'none';
+            // The correct response is shown with the verdict (check the judge, learn the exact
+            // wording) -- except after a miss while other people can still ring in: online, or
+            // with several of you at the keyboard, it comes out when the clue is settled.
+            let hide = !ok && !info.dd && (online() || humans().length > 1);
             let line = '<span class="jp-who">' + esc(who) + ':</span> ' + (said ? esc(said) : '<i>(no response)</i>') +
                 ' &nbsp; <span class="' + (ok ? 'jp-correct' : 'jp-incorrect') + '">' + (none ? 'No response.' : ok ? esc(pick(HOST_RIGHT)) : esc(pick(HOST_WRONG))) + '</span>' +
-                ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>';   // shown either way: check the judge, and learn the exact wording
+                (hide ? '' : ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>');
             setSub(line);
             podiumLine(who, '<span class="' + (ok ? 'jp-correct' : 'jp-incorrect') + '">' + (said ? esc(said) : '(no response)') + '</span>');
         }
@@ -2580,7 +2595,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         JPAudio.play(swept ? 'sweep' : correct ? (info.dd ? 'ddright' : 'right') : 'wrong');
         let speakP = say(correct ? pick(HOST_RIGHT) : pick(HOST_WRONG), tok);
         showAnswerStrip(false);
-        if (online()) { setHint(''); voteOffer(); }
+        if (online()) setHint('');
         else {
             setHint('Misjudged? <span class="jp-key">y</span> = ' + (who == YOU ? 'I was' : esc(who) + ' was') + ' right, <span class="jp-key">n</span> = wrong (until the next clue; later, Edit results in the pause menu).');
             // The y/n override stays available until the next clue starts; it
@@ -2594,6 +2609,16 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         }
         await speakP;
         return { correct: rec.outcome == 'right', said: said, rec: rec };
+    }
+    // What the studio ear is told to expect on a clue (the category and the correct
+    // response), so it spells a response the way the archive does. See offscreen/ear.js.
+    function earPrompt(info) {
+        try {
+            let cat = info && info.category && info.category.name ? JPJudge.stripHtml(info.category.name) : '';
+            let resp = JPJudge.stripHtml(info.abbrev || info.correct || '').replace(/\s+/g, ' ').trim();
+            if (!resp) return '';
+            return (cat ? 'Category: ' + cat + '. ' : '') + 'Response: ' + (info.phrase || 'What is') + ' ' + resp + '?';
+        } catch (e) { return ''; }
     }
     // True when `who` has answered every clue of this clue's category right: a
     // run of the category (the Daily Double in it counts; a category the
@@ -2757,7 +2782,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                              : pick(HOST_WRONG) + ' The correct response: ' + info.phrase.toLowerCase() + ' ' + JPReader.responseToSpeech(info.abbrev) + '?' + takes), tok);
         }
         lightPodium(null);
-        setHint('Click or press ' + anyKeyHtml() + ' to continue.');
+        G.phase = 'pick';
+        if (online()) { setHint(callOffersHtml()); bindCallOffers(); } else setHint('Click or press ' + anyKeyHtml() + ' to continue.');
         await pause(S.autoAdvanceMs, tok);
         showAnswerStrip(false);
     }
@@ -2929,7 +2955,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (!alive(tok)) return;
             if (isYou) {
                 let fjRec = addResult({ kind: 'fj', round: 'FJ', category: fj.category.name, value: 0, amount: wager, who: who, said: resp, correct: JPJudge.stripHtml(fj.correct), outcome: right ? 'right' : 'wrong' });
-                if (online()) voteOffer();
                 // The judge can be overruled here too (y/n), now or from the final screen; the standings and the saved game follow.
                 if (!online()) setHint('Misjudged? <span class="jp-key">y</span> = ' + (who == YOU ? 'I was' : esc(who) + ' was') + ' right, <span class="jp-key">n</span> = wrong (also later: Edit results).');
                 if (!online()) handlers.override = function(isRight) {
@@ -3022,7 +3047,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     if (remaining > 600) startListening(remaining); else finish(U.input.value);
                 });
             }
-            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: true })); }
+            function startListening(ms) { attach(JPAudio.listen(ms + 300, null, { endOnFinal: true, prompt: earPrompt(fj) })); }
             // Ringing in opens the mic; the music ducks underneath. Other
             // players' keys do nothing during one player's response.
             function ringIn(name) {
@@ -3149,6 +3174,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let need = G.online.players.map(function(p) { return p.user_id; }).filter(function(id) { return id != G.online.myId && JPOnline.isPresent(id); });
             let deadline = Date.now() + 20000;
             while (need.length && Date.now() < deadline && alive(tok)) {
+                setHint('Waiting for ' + joinNatural(need.map(function(id) { return '<b>' + esc(onlineNameOf(id) || '?') + '</b>'; })) + ' to finish hearing the clue…');
                 let ev = await JPOnline.waitFor('ready', function(p) { return p.num == num && p.attempt == attempt && need.indexOf(p.from) >= 0; }, deadline - Date.now());
                 if (!ev) break;
                 need.splice(need.indexOf(ev.from), 1);
@@ -3158,7 +3184,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             at = JPOnline.hostNow() + 500;
             JPOnline.send('lights', { num: num, attempt: attempt, at: at });
         } else {
-            setHint('Waiting for the others…');
+            setHint('Waiting for the others to finish hearing the clue…');
             let ev = await JPOnline.waitFor('lights', function(p) { return p.num == num && p.attempt == attempt; }, 75000);
             if (!alive(tok)) return null;
             if (!ev) { onlineLost(); return null; }
@@ -3170,6 +3196,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
     async function raceOnline(tok, contestant, windowMs, userAllowed, getLock, setLock, mult) {
         let num = G.current.num, attempt = ++G.online.attempt;
+        G.online.localBuzz = false;
         let at = await onlineLights(num, attempt, tok);
         if (at == null) return { type: 'timeout', lost: true };
         setLit(true); JPAudio.play('lights');
@@ -3194,6 +3221,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (now < getLock(who)) { setLock(who, now + S.lockoutMs); G.stats.lockouts++; hstat(who, 'lockouts'); JPAudio.play('lockout'); flashLocked(); return; }
                 if (!userAllowed(who)) return;
                 let off = Math.max(0, JPOnline.hostNow() - at);
+                if (!G.online.localBuzz) {
+                    // Right away, on this screen: the podium lights and the buzzer sounds. The host's
+                    // word on who was first follows in a moment; if it wasn't you, the light moves.
+                    G.online.localBuzz = true;
+                    JPAudio.play('buzz'); lightPodium(who); setHint('Ringing in…');
+                }
                 if (hostHere()) candidate({ type: 'user', who: who, off: off });
                 else JPOnline.send('buzz', { num: num, attempt: attempt, off: off });
             };
@@ -3234,10 +3267,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // nobody's record is missing a reversal.
     async function finishOnline(tok) {
         JPOnline.send('fjdone', { });
-        let offLast = null;
         if (hostHere()) {
             // The reveal runs at each player's own voice's pace: wait until everyone is through it,
-            // give a moment for a vote on the last rulings, then settle whatever is open.
+            // then a last call for a vote on the Final Jeopardy! rulings (an interlude for all).
             let need = G.online.players.map(function(p) { return p.user_id; }).filter(function(id) { return id != G.online.myId && JPOnline.isPresent(id); });
             let deadline = Date.now() + 90000;
             if (need.length) setHint('Waiting for the others to finish…');
@@ -3248,18 +3280,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 need = need.filter(function(id) { return JPOnline.isPresent(id); });
             }
             if (!alive(tok)) return;
-            if (voteCallable(true).length) {
-                JPOnline.send('lastcall', { });
-                await lastCall(tok);
-                if (!alive(tok)) return;
-            }
-            let t0 = Date.now();
-            while (openVotes().length && Date.now() - t0 < (VOTE_SECONDS + 5) * 1000 && alive(tok)) { setHint('Waiting for the vote to settle…'); await new Promise(function(r) { setTimeout(r, 300); }); }
-            if (!alive(tok)) return;
-            for (let v of openVotes()) decideVote(v, true);
+            if (voteCallable(true).length) { await hostInterlude({ kind: 'lastcall', seconds: 8 }, tok); if (!alive(tok)) return; }
         } else {
-            offLast = JPOnline.on('lastcall', function() { lastCall(tok); });
-            for (let p of JPOnline.drain('lastcall')) lastCall(tok);
+            // Interludes the host runs now (the last call, votes) play out here too, until the final word.
+            let r = null, deadline = Date.now() + 240000;
+            while (!r && alive(tok)) {
+                r = await followInterludes(tok, [ 'finished' ], Math.max(1000, deadline - Date.now()));
+                if (r && r.t == 'interlude_done') { r = null; setHint('Waiting for the final word…'); }
+                if (!r && Date.now() > deadline) break;
+            }
+            if (!alive(tok)) return;
+            if (!r) { onlineLost(); return; }
+            G.online.finishedMsg = r;
         }
         let results = humans().map(function(hm) {
             let e = gameEntry({ }, hm);
@@ -3268,23 +3300,17 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         });
         let deltas = null;
         if (hostHere()) {
+            setHint('Reporting the game…');
             try { deltas = await JPOnline.finishRoom(G.online.room.id, results); } catch (e) { deltas = { error: e.message }; }
-            JPOnline.send('finished', { deltas: deltas, scores: G.scores, verdicts: Object.values(votes()).filter(function(v) { return v.verdict; }).map(function(v) { return { vid: v.vid, outcome: v.verdict, yes: v.yes, no: v.no, of: v.of }; }) });
+            JPOnline.send('finished', { deltas: deltas, scores: G.scores, verdicts: Object.values(votes()).filter(function(v) { return v.verdict; }).map(function(v) { return { vid: v.vid, outcome: v.verdict, yes: v.yes, no: v.no, of: v.of, want: v.want }; }) });
         } else {
-            if (!/Last call/.test(U.hint.textContent)) setHint('Waiting for the final word…');
-            let ev = await JPOnline.waitFor('finished', null, 180000);
-            if (offLast) offLast();
+            let ev = G.online.finishedMsg;
             deltas = ev ? ev.deltas : null;
             if (ev) { for (let vd of (ev.verdicts || [ ])) applyVerdict(vd); if (ev.scores) takeScores(ev.scores); }
         }
         if (!alive(tok)) return;
         G.online.deltas = deltas;
         try { await JPOnline.loadProfile(); } catch (e) { }
-    }
-    // Six seconds for anyone to call a vote on the Final Jeopardy! rulings.
-    async function lastCall(tok) {
-        for (let i = 6; i > 0 && alive(tok) && !G.recorded; i--) { setHint('Last call for a vote on the Final Jeopardy! rulings… ' + i); await new Promise(function(r) { setTimeout(r, 1000); }); }
-        if (alive(tok) && !G.recorded && !hostHere()) setHint('Waiting for the final word…');
     }
     function ratingLine() {
         if (!online() || !G.online.deltas) return '';
@@ -3294,79 +3320,317 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         return '<p><b>Your rating: ' + d.before + ' → ' + d.after + ' (' + (d.delta >= 0 ? '+' : '') + d.delta + ')</b>' + (JPOnline.profile ? ' <span class="jp-note">· average Coryat in ranked play ' + money(JPOnline.profile.ranked_games ? Math.round(JPOnline.profile.ranked_coryat_sum / JPOnline.profile.ranked_games) : 0) + ' over ' + JPOnline.profile.ranked_games + ' game' + (JPOnline.profile.ranked_games == 1 ? '' : 's') + '</span>' : '') + '</p>';
     }
 
-    // ---- votes: the players overrule the judge -------------------------------------
-    // Offline, y/n overrules the judge on the spot. Online nobody is the referee,
-    // so the players vote. The responder ruled wrong can ask for a reversal: a
-    // majority of the players reverses it, their own vote included (so one of
-    // the other two in a three-player game). Anyone can challenge a response
-    // ruled right: every other player must agree (never in a two-player lobby).
-    // One vote per response, on the clue just played, until the next response
-    // is judged (Final Jeopardy!: until the game's final word). The host tallies
-    // and announces the verdict; its standings follow, and everyone's record of
-    // the game. A vote nobody settles in 45 seconds stands. The money moves;
-    // control of the board never does.
+    // ---- between clues, online: the pick, and the interludes that interrupt it -------
+    // Nobody is the referee online, so between clues the players can interrupt the game:
+    // a vote on the clue just played (the responder ruled wrong asks for a reversal: a
+    // majority of the players, their own vote included; anyone challenges a response
+    // ruled right: every other player must agree, never with only two players), or a vote
+    // for a pause (a majority). Only the clue just played can be voted on, and only until
+    // the next clue starts: the host serializes everything here. A pick (the controller's,
+    // or forced) becomes a clue only when the host says so ('startclue'), after every
+    // interlude called since the last clue ended has run on every screen. A reversal takes
+    // back the money of whoever answered after the reinstated player -- the show's
+    // contestants and the other humans alike -- and gives them control, so the pick starts
+    // over with them. A vote nobody settles in 45 seconds stands. Final Jeopardy! rulings
+    // get a last call before the game is reported.
     const VOTE_SECONDS = 45;
     function votes() { return G.online.votes || (G.online.votes = { }); }
-    function openVotes() { return Object.values(votes()).filter(function(v) { return !v.verdict; }); }
     function voteId(rec) { return (rec.kind == 'fj' ? 'fj' : rec.num) + ':' + (rec.who || YOU); }
     function voteRec(vid) { return (G.results || [ ]).find(function(r) { return voteId(r) == vid; }) || null; }
     function voteLabel(rec) { return rec.kind == 'fj' ? 'Final Jeopardy!' : rec.category + (rec.kind == 'dd' ? ' (Daily Double, ' + money(rec.amount) + ')' : ' for ' + money(rec.value)); }
-    // What can be put to a vote now: the responses on the clue just played
-    // (yours if ruled wrong; someone else's if ruled right), each once.
-    // anyone: what anyone at all could still call (the host's last call).
+    // What can be put to a vote now: the responses on the clue just played (yours if ruled
+    // wrong; someone else's if ruled right), each once, between clues only (and at the last
+    // call). anyone: what anyone at all could still call.
     function voteCallable(anyone) {
         if (!online() || G.online.dead || G.recorded) return [ ];
+        if (!(G.phase == 'pick' || G.online.lastCall)) return [ ];
         let recs = G.results || [ ], last = recs[recs.length - 1];
         if (!last) return [ ];
+        if (G.online.lastCall ? last.kind != 'fj' : (last.kind == 'fj' || last.num != G.online.lastClueNum)) return [ ];
         let out = [ ];
         for (let r of recs) {
-            if (r.kind != last.kind || r.num != last.num || votes()[voteId(r)]) continue;
+            if (r.kind != last.kind || r.num != last.num || votes()[voteId(r)] || r.outcome == 'none') continue;
             if (r.outcome == 'wrong' && (anyone || isMe(r.who))) out.push({ rec: r, want: 'right' });
             else if (r.outcome == 'right' && (anyone || !isMe(r.who)) && G.online.players.length > 2) out.push({ rec: r, want: 'wrong' });
         }
         return out;
     }
-    function voteOffer() { renderVotes(); }
-    // y / n: a ballot on an open vote waiting for yours; otherwise a call (y = I was right, n = that one was wrong).
+    // The hint's offers between clues: a vote on the last clue, a pause.
+    function callOffersHtml() {
+        if (!online() || G.online.dead || G.recorded) return '';
+        let o = voteCallable(), html = '';
+        for (let x of o) html += ' <button class="jp-btn jp-secondary jp-call" data-call="vote" data-vid="' + esc(voteId(x.rec)) + '" style="padding:1px 9px;font-size:0.9em">' + (x.want == 'right' ? 'I was right on the last clue <span class="jp-key">y</span>' : 'Challenge ' + esc(x.rec.who) + '\'s "right" <span class="jp-key">n</span>') + '</button>';
+        if (!G.online.pausePending) html += ' <button class="jp-btn jp-secondary jp-call" data-call="pause" style="padding:1px 9px;font-size:0.9em">Ask for a pause <span class="jp-key">p</span></button>';
+        return html ? '<span class="jp-offers">' + html + '</span>' : '';
+    }
+    function bindCallOffers() {
+        U.hint.querySelectorAll('button[data-call]').forEach(function(b) {
+            b.onclick = function(e) {
+                e.preventDefault(); e.stopPropagation();
+                if (b.dataset.call == 'pause') callPause();
+                else { let o = voteCallable().find(function(x) { return voteId(x.rec) == b.dataset.vid; }); if (o) callVote(o); }
+            };
+        });
+    }
+    // y / n: a ballot on the vote on screen waiting for yours; otherwise a call (y = I was right, n = challenge).
     function voteKey(yes) {
-        let mine = openVotes().find(function(v) { return voteVoters(v).indexOf(G.online.myId) >= 0 && v.ballots[G.online.myId] == null; });
-        if (mine) { castBallot(mine, yes); return; }
+        let v = G.online && G.online.interlude && G.online.interlude.vote;
+        if (v && !v.verdict && voteVoters(v).indexOf(G.online.myId) >= 0 && v.ballots[G.online.myId] == null) { castBallot(v, yes); return; }
         let o = voteCallable().find(function(x) { return x.want == (yes ? 'right' : 'wrong'); });
         if (o) callVote(o);
     }
+    // A call goes to the host (the host's own go straight into its queue); the host runs it at the next safe point.
+    function sendCall(p) {
+        if (hostHere()) { (G.online.calls || (G.online.calls = [ ])).push(Object.assign({ from: G.online.myId }, p)); if (G.online.wakeHost) G.online.wakeHost(); }
+        else JPOnline.send('call', p);
+    }
     function callVote(o) {
         let rec = o.rec, vid = voteId(rec);
-        if (votes()[vid]) return;
-        let p = { vid: vid, num: rec.num == null ? null : rec.num, kind: rec.kind, who: rec.who || YOU, want: o.want, said: rec.said || '', correct: rec.correct || '', label: voteLabel(rec) };
-        JPOnline.send('vote', p);
-        registerVote(Object.assign({ from: G.online.myId }, p));
+        if (votes()[vid] || G.online.calledVids && G.online.calledVids[vid]) return;
+        (G.online.calledVids || (G.online.calledVids = { }))[vid] = true;
+        sendCall({ kind: 'vote', vid: vid, num: rec.num == null ? null : rec.num, rkind: rec.kind, who: rec.who || YOU, want: o.want, said: rec.said || '', correct: rec.correct || '', label: voteLabel(rec) });
+        setHint('Vote called — one moment…');
     }
+    function callPause() {
+        if (!online() || G.online.dead || G.recorded || G.online.pausePending) return;
+        G.online.pausePending = true;
+        sendCall({ kind: 'pause' });
+        setHint('Asked for a pause — it comes up ' + (G.phase == 'pick' ? 'now' : 'after this clue') + '.');
+    }
+
+    // ---- the host's side -------------------------------------------------------------
+    // Waits for a call to arrive (a message, or the host's own), or for the pick, whichever first.
+    function hostCallsPending() { return (G.online.calls || [ ]).length > 0; }
+    function nextHostCall() {
+        let q = G.online.calls || [ ];
+        if (!q.length) return null;
+        // Votes first, the earliest response's first (a reversal makes the later responses on the clue moot), then pauses.
+        let best = 0;
+        for (let i = 1; i < q.length; i++) {
+            let a = q[best], b = q[i];
+            let ra = a.kind == 'vote' ? voteRec(a.vid) : null, rb = b.kind == 'vote' ? voteRec(b.vid) : null;
+            if ((b.kind == 'vote') != (a.kind == 'vote')) { if (b.kind == 'vote') best = i; }
+            else if (ra && rb && rb.id < ra.id) best = i;
+        }
+        return q.splice(best, 1)[0];
+    }
+    function hostCallListener() {
+        return JPOnline.on('call', function(p) {
+            if (!online() || !hostHere()) return;
+            p.used = true;
+            (G.online.calls || (G.online.calls = [ ])).push(p);
+            if (G.online.wakeHost) G.online.wakeHost();
+        });
+    }
+    // The host runs one interlude for everyone: 'vote' (a reversal or a challenge),
+    // 'pause' (a vote, then the pause itself until someone resumes), 'lastcall' (the
+    // Final Jeopardy! window; votes called during it run inside it). Returns when done.
+    async function hostInterlude(call, tok) {
+        let id = ++G.online.interludeSeq;
+        if (call.kind == 'vote') {
+            if (votes()[call.vid]) return;
+            let rec = voteRec(call.vid);
+            if (!rec || rec.outcome == 'none' || (call.want == 'right' ? rec.outcome != 'wrong' : rec.outcome != 'right')) return;   // stale or already settled
+            if (!(G.online.lastCall ? rec.kind == 'fj' : rec.num == G.online.lastClueNum)) return;                    // too late: the game has moved on
+            let p = { id: id, kind: 'vote', vid: call.vid, who: call.who, want: call.want, said: String(call.said || ''), correct: String(call.correct || ''), label: String(call.label || ''), caller: call.from };
+            JPOnline.send('interlude', p);
+            let v = registerVote(Object.assign({ from: call.from }, p));
+            await runVotePanel(v, tok);
+            if (!alive(tok)) return;
+            JPOnline.send('interlude_end', { id: id, control: G.control, scores: G.scores, seq: ++G.online.scoresSeq });
+        } else if (call.kind == 'pause') {
+            G.online.pausePending = false;
+            let p = { id: id, kind: 'pause', caller: call.from };
+            JPOnline.send('interlude', p);
+            let v = registerVote({ vid: 'pause:' + id, want: 'pause', who: onlineNameOf(call.from) || '?', from: call.from, caller: call.from, label: '', said: '', correct: '' });
+            await runVotePanel(v, tok);
+            if (!alive(tok)) return;
+            if (v.verdict == 'pause') {
+                JPOnline.send('paused', { id: id, by: call.from });
+                await runPausedPanel(onlineNameOf(call.from) || 'someone', tok, true, id);
+                if (!alive(tok)) return;
+                JPOnline.send('resumed', { id: id });
+            }
+            JPOnline.send('interlude_end', { id: id, control: G.control, scores: G.scores, seq: ++G.online.scoresSeq });
+        } else if (call.kind == 'lastcall') {
+            G.online.lastCall = true;
+            JPOnline.send('interlude', { id: id, kind: 'lastcall', seconds: call.seconds });
+            let until = Date.now() + call.seconds * 1000;
+            while (alive(tok)) {
+                showLastCallPanel(until);
+                let c = await waitHostCall(tok, Math.max(0, until - Date.now()));
+                if (!alive(tok)) return;
+                if (!c) break;
+                if (c.kind == 'vote') { await hostInterlude(c, tok); if (!alive(tok)) return; until = Math.max(until, Date.now() + 4000); }   // a moment more after a vote, for another
+            }
+            G.online.lastCall = false;
+            JPOnline.send('interlude_end', { id: id, control: G.control, scores: G.scores, seq: ++G.online.scoresSeq });
+        }
+    }
+    // A wait for the next call, with a cancel() for when the pick came first (a waiter left
+    // behind would swallow the next call).
+    function waitHostCall(tok, timeoutMs) {
+        let done = false, t = null, res = null;
+        let pr = new Promise(function(resolve) {
+            res = resolve;
+            let fire = function() { if (done) return; let c = nextHostCall(); if (!c) return; done = true; if (t) clearTimeout(t); G.online.wakeHost = null; resolve(c); };
+            G.online.wakeHost = fire;
+            fire();
+            if (!done) t = setTimeout(function() { if (done) return; done = true; G.online.wakeHost = null; resolve(null); }, timeoutMs);
+        });
+        pr.cancel = function() { if (done) return; done = true; if (t) clearTimeout(t); G.online.wakeHost = null; res(null); };
+        return pr;
+    }
+    // The host between clues: interludes first, then the pick, then the word that starts the clue.
+    async function hostBetweenClues(tok, round, remaining) {
+        while (alive(tok)) {
+            while (hostCallsPending() && alive(tok)) { let c = nextHostCall(); await hostInterlude(c, tok); }
+            if (!alive(tok)) return null;
+            let controller = G.control, num = null;
+            if (remaining.length == 1) num = remaining[0];
+            if (num == null && isHuman(controller) && !isMe(controller)) {
+                renderBoard(round, false);
+                setHint('<b>' + esc(controller) + '</b> has control and is picking…' + callOffersHtml()); bindCallOffers();
+                let id = onlineIdOf(controller), wait = JPOnline.isPresent(id) ? 30000 : 1500;
+                let pickW = JPOnline.waitFor('pick', function(p) { return p.from == id && p.round == round && remaining.indexOf(p.num) >= 0; }, wait);
+                let callW = waitHostCall(tok, wait + 100);
+                let ev = await Promise.race([ pickW, callW.then(function(c) { return c ? { call: c } : null; }) ]);
+                pickW.cancel(); callW.cancel();
+                if (!alive(tok)) return null;
+                if (ev && ev.call) { await hostInterlude(ev.call, tok); continue; }
+                num = ev ? ev.num : remaining[0];                    // gone quiet: the host picks for them (the first unplayed)
+            } else if (num == null && isHuman(controller)) {
+                renderBoard(round, true);
+                let pick = userPick(tok), callW = waitHostCall(tok, 3600000);
+                let ev = await Promise.race([ pick.then(function(n) { return { num: n }; }), callW.then(function(c) { return c ? { call: c } : null; }) ]);
+                callW.cancel();
+                if (!alive(tok)) { pick.cancel(); return null; }
+                if (ev && ev.call) { pick.cancel(); await hostInterlude(ev.call, tok); continue; }
+                num = ev && ev.num != null ? ev.num : null;
+                if (num == null) continue;
+            } else if (num == null) {
+                renderBoard(round, false);
+                num = remaining[0];                                  // a contestant in control: broadcast order
+                let info = clueInfo(num), cell = boardCell(num);
+                if (cell) cell.classList.add('jp-picking');
+                setHint(esc(controller) + ' has control.' + callOffersHtml()); bindCallOffers();
+                podiumLine(controller, '&ldquo;' + esc(info.category.name) + ' for ' + money(info.value) + '&rdquo;');
+                await csay(controller, JPReader.categoryToSpeech(info.category.name) + ' for ' + info.value, tok);
+                if (!alive(tok)) return null;
+                await sleep(S.contestantVoices ? 150 : 700, tok);
+                if (!alive(tok)) return null;
+            } else { renderBoard(round, false); let cell = boardCell(num); if (cell) cell.classList.add('jp-picking'); }
+            // A call that landed while the pick was being made runs first; if control moved, the pick starts over.
+            if (hostCallsPending()) { let before = G.control; while (hostCallsPending() && alive(tok)) { let c = nextHostCall(); await hostInterlude(c, tok); } if (!alive(tok)) return null; if (G.control != before && remaining.length > 1) continue; }
+            JPOnline.send('startclue', { num: num, round: round, control: G.control, seq: ++G.online.clueSeq });
+            let cell = boardCell(num); if (cell) cell.classList.add('jp-picking');
+            return num;
+        }
+        return null;
+    }
+    // ---- the followers' side ----------------------------------------------------------
+    // Waits for the host's word (one of `ends`), or runs the first interlude that comes
+    // instead and returns { t: 'interlude_done' } (the caller redraws its screen and waits
+    // again). Returns null on timeout.
+    async function followInterludes(tok, ends, timeoutMs) {
+        let deadline = Date.now() + timeoutMs;
+        while (alive(tok)) {
+            let ev = await JPOnline.waitForAny([ 'interlude' ].concat(ends), function(p) {
+                if (p.from != G.online.hostId) return false;
+                if (p.t == 'interlude') return p.id > (G.online.interludeSeq || 0);
+                if (p.t == 'startclue') return p.seq > (G.online.clueSeq || 0);
+                return true;
+            }, Math.max(0, Math.min(5000, deadline - Date.now())));
+            if (!alive(tok)) return null;
+            if (ev && ev.t == 'interlude') { await followInterlude(ev, tok); return alive(tok) ? { t: 'interlude_done' } : null; }
+            if (ev) return ev;
+            if (Date.now() > deadline) return null;
+        }
+        return null;
+    }
+    async function followInterlude(p, tok) {
+        G.online.interludeSeq = p.id;
+        if (p.kind == 'vote') {
+            let v = registerVote(Object.assign({ }, p, { from: p.caller }));
+            await runVotePanel(v, tok);
+        } else if (p.kind == 'pause') {
+            let v = registerVote({ vid: 'pause:' + p.id, want: 'pause', who: onlineNameOf(p.caller) || '?', from: p.caller, caller: p.caller, label: '', said: '', correct: '' });
+            await runVotePanel(v, tok);
+            if (!alive(tok)) return;
+            if (v.verdict == 'pause') { await runPausedPanel(onlineNameOf(p.caller) || 'someone', tok, false, p.id); if (!alive(tok)) return; }
+        } else if (p.kind == 'lastcall') {
+            G.online.lastCall = true;
+            let until = Date.now() + (+p.seconds || 8) * 1000;
+            showLastCallPanel(until);
+        }
+        // The host closes every interlude; nested ones (votes during the last call) arrive as their own.
+        let end = null;
+        while (!end && alive(tok)) {
+            let ev = await JPOnline.waitForAny([ 'interlude_end', 'interlude' ], function(q) { return q.from == G.online.hostId && (q.t == 'interlude_end' ? q.id == p.id : q.id > (G.online.interludeSeq || 0)); }, 5000);
+            if (!alive(tok)) return;
+            if (ev && ev.t == 'interlude') { await followInterlude(ev, tok); if (!alive(tok)) return; if (p.kind == 'lastcall') showLastCallPanel(Date.now() + 4000); }
+            else if (ev) end = ev;
+            else if (!JPOnline.isPresent(G.online.hostId) && Date.now() - (G.online.hostGoneAt || Date.now()) > 12000) { onlineLost(); return; }
+        }
+        if (!alive(tok)) return;
+        if (p.kind == 'lastcall') G.online.lastCall = false;
+        if (end) { if (end.control && end.control != G.control) setControl(end.control); if (end.scores) { G.online.lastScoresSeq = end.seq; takeScores(end.scores); } }
+    }
+    async function followBetweenClues(tok, round, remaining) {
+        while (alive(tok)) {
+            let controller = G.control, pick = null;
+            if (remaining.length > 1 && isHuman(controller) && isMe(controller)) { renderBoard(round, true); pick = userPick(tok); pick.then(function(n) { if (n != null) { JPOnline.send('pick', { num: n, round: round }); setHint('Picked — waiting for the host…'); } }); }
+            else { renderBoard(round, false); if (remaining.length == 1) { let cell = boardCell(remaining[0]); if (cell) cell.classList.add('jp-picking'); setHint('The last clue of the round.' + callOffersHtml()); } else { setHint('<b>' + esc(controller) + '</b> has control and is picking…' + callOffersHtml()); } bindCallOffers(); }
+            let ev = await followInterludes(tok, [ 'startclue' ], 120000);
+            if (pick) pick.cancel();
+            if (!alive(tok)) return null;
+            if (!ev) return null;
+            if (ev.t == 'interlude_done') continue;                 // the board comes back, and the pick starts over
+            G.online.clueSeq = ev.seq;
+            if (ev.control && ev.control != G.control) setControl(ev.control);
+            let cell = boardCell(ev.num); if (cell) cell.classList.add('jp-picking');
+            if (remaining.length > 1 && !isHuman(G.control)) {
+                let info = clueInfo(ev.num);
+                setHint(esc(G.control) + ' has control.');
+                podiumLine(G.control, '&ldquo;' + esc(info.category.name) + ' for ' + money(info.value) + '&rdquo;');
+                await csay(G.control, JPReader.categoryToSpeech(info.category.name) + ' for ' + info.value, tok);
+                if (!alive(tok)) return null;
+            }
+            return ev.num;
+        }
+        return null;
+    }
+    async function betweenCluesOnline(tok, round, remaining) {
+        // Clocks drift a little over a game; a re-sync between clues now and then keeps the lights honest.
+        if (!hostHere() && Object.keys(G.played).length % 10 == 5) JPOnline.syncClock().catch(function() { });
+        return hostHere() ? hostBetweenClues(tok, round, remaining) : followBetweenClues(tok, round, remaining);
+    }
+
+    // ---- votes --------------------------------------------------------------------------
     function registerVote(p) {
-        if (!online() || !p.vid || votes()[p.vid]) return;
-        let v = { vid: p.vid, who: p.who, want: p.want == 'wrong' ? 'wrong' : 'right', callerId: p.from, caller: onlineNameOf(p.from) || p.who, said: String(p.said || ''), correct: String(p.correct || ''), label: String(p.label || ''),
+        if (!online() || !p.vid) return votes()[p.vid] || null;
+        if (votes()[p.vid]) return votes()[p.vid];
+        let v = { vid: p.vid, who: p.who, want: p.want == 'wrong' ? 'wrong' : p.want == 'pause' ? 'pause' : 'right', callerId: p.from, caller: onlineNameOf(p.from) || p.who, said: String(p.said || ''), correct: String(p.correct || ''), label: String(p.label || ''),
                   ballots: { }, verdict: null, yes: 0, no: 0, of: G.online.players.length, at: Date.now(), timer: null };
         votes()[p.vid] = v;
         v.ballots[v.callerId] = true;                 // the caller's own vote
         for (let b of JPOnline.drain('ballot', function(x) { return x.vid == v.vid; })) if (voteVoters(v).indexOf(b.from) >= 0) v.ballots[b.from] = !!b.yes;   // ballots that got here first
-        let vd = JPOnline.drain('verdict', function(x) { return x.vid == v.vid; })[0];
-        if (hostHere()) { v.timer = setTimeout(function() { decideVote(v, true); }, VOTE_SECONDS * 1000); decideVote(v, false); }
-        if (vd) applyVerdict(vd);
-        renderVotes();
+        return v;
     }
-    // Who votes: everyone but the caller and the one whose response it is.
+    // Who votes: everyone but the caller and (for a ruling) the one whose response it is.
     function voteVoters(v) {
-        let target = onlineIdOf(v.who);
+        let target = v.want == 'pause' ? null : onlineIdOf(v.who);
         return G.online.players.map(function(p) { return p.user_id; }).filter(function(id) { return id != target && id != v.callerId; });
     }
-    // "Yes" ballots needed from them: a majority of all the players for a
-    // reversal (the caller's own counts), every one of them for a challenge.
-    function voteNeeds(v) { let n = G.online.players.length; return v.want == 'right' ? Math.floor(n / 2) : Math.max(1, n - 2); }
+    // "Yes" ballots needed from them: a majority of all the players for a reversal or a
+    // pause (the caller's own counts), every one of them for a challenge.
+    function voteNeeds(v) { let n = G.online.players.length; return v.want == 'wrong' ? Math.max(1, n - 2) : Math.floor(n / 2); }
     function castBallot(v, yes) {
         if (v.verdict || v.ballots[G.online.myId] != null) return;
         v.ballots[G.online.myId] = !!yes;
         JPOnline.send('ballot', { vid: v.vid, yes: !!yes });
         if (hostHere()) decideVote(v, false);
-        renderVotes();
+        renderVotePanel(v);
     }
     function decideVote(v, timedOut) {
         if (!hostHere() || v.verdict) return;
@@ -3376,29 +3640,38 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let pending = voters.length - yes - no;
         let outcome = yes >= need ? v.want : (yes + pending < need || timedOut) ? 'stands' : null;
         if (!outcome) return;
-        let p = { vid: v.vid, outcome: outcome, yes: yes + 1, no: no, of: G.online.players.length };
+        let p = { vid: v.vid, outcome: outcome, yes: yes + 1, no: no, of: G.online.players.length, want: v.want };
         JPOnline.send('verdict', p);
         applyVerdict(Object.assign({ from: G.online.myId }, p));
     }
+    // The verdict, everywhere: the ruling changes (and, for a reversal to right, those who
+    // answered after lose what they made on the clue, and the board goes back), the host
+    // moves the money, the others take the host's standings.
     function applyVerdict(p) {
         if (!online() || !p || !p.vid) return;
         let rec = voteRec(p.vid), v = votes()[p.vid];
-        if (!v) { if (!rec) return; v = votes()[p.vid] = { vid: p.vid, who: rec.who || YOU, want: p.outcome, callerId: null, caller: '', said: rec.said || '', correct: rec.correct || '', label: voteLabel(rec), ballots: { }, verdict: null, of: p.of, at: Date.now(), timer: null }; }
+        if (!v) { if (!rec) return; v = votes()[p.vid] = { vid: p.vid, who: rec.who || YOU, want: p.want || p.outcome, callerId: null, caller: '', said: rec.said || '', correct: rec.correct || '', label: voteLabel(rec), ballots: { }, verdict: null, of: p.of, at: Date.now(), timer: null }; }
         if (v.verdict) return;
         if (v.timer) { clearTimeout(v.timer); v.timer = null; }
-        v.verdict = p.outcome == 'right' || p.outcome == 'wrong' ? p.outcome : 'stands'; v.yes = +p.yes || 0; v.no = +p.no || 0; v.closedAt = Date.now();
-        if (rec && v.verdict != 'stands' && rec.outcome != v.verdict) {
-            if (hostHere()) { setOutcome(rec, v.verdict, { noControl: true }); sendScores(rec.num); }
-            else markOutcome(rec, v.verdict);           // the money follows the host's standings
+        v.verdict = p.outcome == 'right' || p.outcome == 'wrong' || p.outcome == 'pause' ? p.outcome : 'stands'; v.yes = +p.yes || 0; v.no = +p.no || 0; v.closedAt = Date.now();
+        if (rec && (v.verdict == 'right' || v.verdict == 'wrong') && rec.outcome != v.verdict) {
+            let change = hostHere() ? function(r, o) { setOutcome(r, o, { noControl: true }); } : markOutcome;
+            change(rec, v.verdict);
+            rec.byVote = v.verdict;
+            if (v.verdict == 'right' && rec.kind != 'fj') {
+                // Those who answered after never got the chance: their responses on this clue are void.
+                for (let r of G.results) if (r.num == rec.num && r.kind == rec.kind && r.id > rec.id && r.outcome != 'none') { change(r, 'none'); r.voided = p.vid; }
+                if (hostHere() && G.phase == 'pick') setControl(rec.who);
+                else if (G.phase == 'pick') G.control = rec.who;
+            }
+            if (hostHere()) sendScores(rec.num);
             let ok = v.verdict == 'right';
             podiumLine(rec.who, '<span class="' + (ok ? 'jp-correct' : 'jp-incorrect') + '">' + (rec.said ? esc(rec.said) : '(no response)') + '</span> <span class="jp-note">(by vote)</span>');
-            if (clueSubEl && clueSubEl.isConnected && G.current && (rec.kind == 'fj' ? G.round == 'FJ' : G.current.num == rec.num)) clueSubEl.insertAdjacentHTML('beforeend', ' <span class="jp-sweep">Reversed by vote: ' + (ok ? 'right' : 'wrong') + '.</span>');
             if (G.recorded) { refreshRecord(); if (U.stage.querySelector('.jp-again')) showFinalStandings(); }
         }
-        renderVotes();
-        setTimeout(renderVotes, 9000);                  // the result lingers a moment
+        if (v.resolve) v.resolve();
     }
-    // A reversal on a client that isn't the host: the record changes, the money comes with the host's next standings.
+    // A change on a client that isn't the host: the record changes; the money comes with the host's standings.
     function markOutcome(rec, outcome) {
         if (rec.outcome == outcome) return;
         if (rec.outcome == 'right') G.stats.correct--; else if (rec.outcome == 'wrong') G.stats.wrong--;
@@ -3409,60 +3682,83 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
     function onlineVoteSync() {
         let offs = [
-            JPOnline.on('vote', function(p) { p.used = true; registerVote(p); }),
-            JPOnline.on('ballot', function(p) { let v = votes()[p.vid]; if (!v) return; p.used = true; if (v.verdict || voteVoters(v).indexOf(p.from) < 0) return; v.ballots[p.from] = !!p.yes; if (hostHere()) decideVote(v, false); renderVotes(); }),
-            JPOnline.on('verdict', function(p) { if (p.from != G.online.hostId) return; if (!votes()[p.vid] && !voteRec(p.vid)) return; p.used = true; applyVerdict(p); }),
+            JPOnline.on('ballot', function(p) { let v = votes()[p.vid]; if (!v) return; p.used = true; if (v.verdict || voteVoters(v).indexOf(p.from) < 0) return; v.ballots[p.from] = !!p.yes; if (hostHere()) decideVote(v, false); renderVotePanel(v); }),
+            JPOnline.on('verdict', function(p) { if (p.from != G.online.hostId) return; p.used = true; applyVerdict(p); }),
+            JPOnline.on('resumed', function(p) { if (p.from == G.online.hostId && G.online.resumeWaiter) G.online.resumeWaiter(p.id); }),
+            JPOnline.on('resume', function(p) { if (hostHere() && G.online.resumeWaiter) G.online.resumeWaiter(p.id); }),
         ];
+        if (hostHere()) offs.push(hostCallListener());
         return function() { offs.forEach(function(f) { f(); }); };
     }
-    // The box in the corner: open votes (with your ballot, if it's yours to cast), results for a moment, and what you could call.
-    function renderVotes() {
-        if (!U || !U.votes) return;
-        let box = U.votes;
-        if (!online() || G.recorded || G.online.dead) { box.innerHTML = ''; box.style.display = 'none'; return; }   // the final screen has the record
-        let now = Date.now(), html = '';
-        let list = Object.values(votes()).filter(function(v) { return !v.verdict || now - v.closedAt < 9000; }).sort(function(a, b) { return a.at - b.at; });
-        for (let v of list) html += voteHtml(v);
-        if (!list.some(function(v) { return !v.verdict; })) for (let o of voteCallable()) html += offerHtml(o);
-        box.innerHTML = html;
-        box.style.display = html ? '' : 'none';
-        box.querySelectorAll('button[data-vote]').forEach(function(b) {
-            b.onclick = function(e) {
-                e.preventDefault(); e.stopPropagation();
-                let act = b.dataset.vote, vid = b.dataset.vid;
-                if (act == 'call') { let o = voteCallable().find(function(x) { return voteId(x.rec) == vid; }); if (o) callVote(o); }
-                else { let v = votes()[vid]; if (v) castBallot(v, act == 'yes'); }
-            };
+    // The vote, on everyone's screen, until the host's verdict (shown for a moment).
+    function runVotePanel(v, tok) {
+        G.online.interlude = { vote: v };
+        return new Promise(function(resolve) {
+            let finished = false;
+            let done = function() { if (finished) return; finished = true; G.online.interlude = null; setTimeout(resolve, v.verdict == 'stands' ? 2600 : 3200); };
+            v.resolve = done;
+            if (hostHere() && !v.verdict) v.timer = setTimeout(function() { decideVote(v, true); }, VOTE_SECONDS * 1000);
+            renderVotePanel(v);
+            if (hostHere()) decideVote(v, false);
+            if (v.verdict) done();
+            else { let guard = setInterval(function() { if (finished || !alive(tok)) { clearInterval(guard); if (!finished) { finished = true; G.online.interlude = null; resolve(); } } else if (!v.verdict && Date.now() - v.at > (VOTE_SECONDS + 20) * 1000) { clearInterval(guard); v.verdict = 'stands'; done(); } }, 500); }
         });
     }
-    function voteHtml(v) {
-        let me = G.online.myId, who = v.who, isTarget = isMe(who);
-        let head = v.want == 'right' ? '<b>' + (isTarget ? 'You ask' : esc(v.caller) + ' asks') + '</b> for a reversal'
+    function renderVotePanel(v) {
+        let me = G.online.myId, who = v.who, isTarget = v.want != 'pause' && isMe(who);
+        let head = v.want == 'pause' ? '<b>' + (v.callerId == me ? 'You ask' : esc(v.caller) + ' asks') + '</b> for a pause'
+                 : v.want == 'right' ? '<b>' + (isTarget ? 'You ask' : esc(v.caller) + ' asks') + '</b> for a reversal'
                                      : '<b>' + (v.callerId == me ? 'You challenge' : esc(v.caller) + ' challenges') + '</b> ' + (isTarget ? 'your' : esc(who) + '\'s') + ' response';
-        let detail = '<div>' + esc(v.label) + ' — <b>' + (isTarget ? 'you' : esc(who)) + '</b> said: ' + (v.said ? '<i>' + esc(v.said) + '</i>' : '<i>(nothing)</i>') + ' · correct response: <i>' + esc(v.correct) + '</i>' + (v.want == 'right' ? ' · ruled wrong' : ' · ruled right') + '</div>';
-        let rule = '<div class="jp-note">' + (v.want == 'right' ? 'A majority of the players reverses it (the caller\'s own vote counts).' : 'Every other player must agree.') + '</div>';
+        let detail = v.want == 'pause' ? '<p>The game pauses for everyone until someone resumes it.</p>'
+                   : '<p>' + esc(v.label) + ' — <b>' + (isTarget ? 'you' : esc(who)) + '</b> said: ' + (v.said ? '<i>' + esc(v.said) + '</i>' : '<i>(nothing)</i>') + '<br>Correct response: <em class="correct_response">' + esc(v.correct) + '</em> · ruled <b>' + (v.want == 'right' ? 'wrong' : 'right') + '</b></p>';
+        let rule = '<p class="jp-note">' + (v.want == 'wrong' ? 'Every other player must agree.' : 'A majority of the players decides (the caller\'s own vote counts).') + (v.want == 'right' ? ' A reversal takes back what anyone made on this clue afterwards, and the board goes to ' + (isTarget ? 'you' : esc(who)) + '.' : '') + '</p>';
         let body;
         if (v.verdict) {
             let tally = ' <span class="jp-note">(' + v.yes + ' of ' + v.of + ' for)</span>';
-            body = '<div class="jp-vote-result ' + (v.verdict == 'stands' ? 'jp-note' : v.verdict == 'right' ? 'jp-correct' : 'jp-incorrect') + '">' +
-                (v.verdict == 'stands' ? 'The ruling stands.' : v.verdict == 'right' ? 'Reversed — ruled right.' : 'Reversed — ruled wrong.') + tally + '</div>';
+            body = '<p class="jp-vote-result ' + (v.verdict == 'stands' ? 'jp-note' : v.verdict == 'right' || v.verdict == 'pause' ? 'jp-correct' : 'jp-incorrect') + '">' +
+                (v.verdict == 'stands' ? (v.want == 'pause' ? 'No pause.' : 'The ruling stands.') : v.verdict == 'pause' ? 'Pause granted.' : v.verdict == 'right' ? 'Reversed — ruled right.' : 'Reversed — ruled wrong.') + tally + '</p>';
         } else {
             let voters = voteVoters(v), mine = voters.indexOf(me) >= 0;
             let yes = voters.filter(function(id) { return v.ballots[id] === true; }).length, no = voters.filter(function(id) { return v.ballots[id] === false; }).length;
             let waiting = voters.filter(function(id) { return v.ballots[id] == null; }).map(function(id) { return esc(onlineNameOf(id) || '?'); });
             if (mine && v.ballots[me] == null)
-                body = '<div class="jp-vote-q">' + (v.want == 'right' ? 'Was ' + esc(who) + ' right?' : 'Should it be ruled wrong?') + '</div>' +
-                       '<div class="jp-vote-btns"><button class="jp-btn" data-vote="yes" data-vid="' + esc(v.vid) + '">Yes <span class="jp-key">y</span></button> <button class="jp-btn jp-secondary" data-vote="no" data-vid="' + esc(v.vid) + '">No <span class="jp-key">n</span></button></div>';
+                body = '<p class="jp-vote-q">' + (v.want == 'pause' ? 'Pause the game?' : v.want == 'right' ? 'Was ' + esc(who) + ' right?' : 'Should it be ruled wrong?') + '</p>' +
+                       '<p><button class="jp-btn jp-vote-yes">Yes <span class="jp-key">y</span></button> <button class="jp-btn jp-secondary jp-vote-no">No <span class="jp-key">n</span></button></p>';
             else
-                body = '<div class="jp-note">' + (mine ? 'Your vote is in. ' : '') + (waiting.length ? 'Waiting for ' + joinNatural(waiting) + '…' : 'Counting…') + (yes + no ? ' (so far: ' + yes + ' yes, ' + no + ' no)' : '') + '</div>';
+                body = '<p class="jp-note">' + (mine ? 'Your vote is in. ' : '') + (waiting.length ? 'Waiting for ' + joinNatural(waiting) + '…' : 'Counting…') + (yes + no ? ' (so far: ' + yes + ' yes, ' + no + ' no)' : '') + '</p>';
         }
-        return '<div class="jp-vote"><h3>' + head + '</h3>' + detail + body + (v.verdict ? '' : rule) + '</div>';
+        let panel = showPanel('<h1>' + head + '</h1>' + detail + body + (v.verdict ? '' : rule));
+        panel.classList.add('jp-vote-panel');
+        panel.dataset.vid = v.vid;
+        let y = panel.querySelector('.jp-vote-yes'), n = panel.querySelector('.jp-vote-no');
+        if (y) y.onclick = function() { castBallot(v, true); };
+        if (n) n.onclick = function() { castBallot(v, false); };
+        setHint('');
     }
-    function offerHtml(o) {
-        let r = o.rec, vid = voteId(r);
-        if (o.want == 'right')
-            return '<div class="jp-vote jp-vote-offer">Ruled wrong on ' + esc(voteLabel(r)) + '. Were you right? <button class="jp-btn" data-vote="call" data-vid="' + esc(vid) + '">Call a vote <span class="jp-key">y</span></button><div class="jp-note">A majority of the players reverses it.</div></div>';
-        return '<div class="jp-vote jp-vote-offer jp-dim"><b>' + esc(r.who) + '</b> was ruled right on ' + esc(voteLabel(r)) + '. Too generous? <button class="jp-btn jp-secondary" data-vote="call" data-vid="' + esc(vid) + '">Challenge <span class="jp-key">n</span></button><div class="jp-note">Every other player must agree.</div></div>';
+    // Paused for everyone: the host waits for anyone's Resume; the others for the host's word.
+    function runPausedPanel(by, tok, host, id) {
+        return new Promise(function(resolve) {
+            let panel = showPanel('<h1>Paused</h1><p>' + esc(by) + ' asked for a pause. The game goes on when anyone resumes it.</p><p><button class="jp-btn jp-resume-online">Resume</button></p>');
+            panel.classList.add('jp-vote-panel');
+            panel.querySelector('.jp-resume-online').onclick = function() { if (host) { if (G.online.resumeWaiter) G.online.resumeWaiter(id); } else JPOnline.send('resume', { id: id }); panel.querySelector('.jp-resume-online').disabled = true; };
+            let finished = false;
+            G.online.resumeWaiter = function(rid) { if (finished || (rid != null && rid != id)) return; finished = true; G.online.resumeWaiter = null; resolve(); };
+            if (!host) { let pending = JPOnline.drain('resumed', function(q) { return q.id == id; }); if (pending.length) G.online.resumeWaiter(id); }
+            else { let pending = JPOnline.drain('resume', function(q) { return q.id == id; }); if (pending.length) G.online.resumeWaiter(id); }
+            let guard = setInterval(function() { if (finished || !alive(tok)) { clearInterval(guard); if (!finished) { finished = true; G.online.resumeWaiter = null; resolve(); } } }, 500);
+            setHint('');
+        });
+    }
+    function showLastCallPanel(until) {
+        let offers = voteCallable();
+        let panel = showPanel('<h1>Last call</h1><p>A vote on the Final Jeopardy! rulings? Then it\'s over.</p>' +
+            (offers.length ? '<p>' + offers.map(function(x) { return '<button class="jp-btn jp-secondary jp-call" data-call="vote" data-vid="' + esc(voteId(x.rec)) + '">' + (x.want == 'right' ? 'I was right <span class="jp-key">y</span>' : 'Challenge ' + esc(x.rec.who) + '\'s "right" <span class="jp-key">n</span>') + '</button>'; }).join(' ') + '</p>' : '<p class="jp-note">Nothing of yours to contest.</p>') +
+            '<p class="jp-note jp-lastcall-count"></p>');
+        panel.classList.add('jp-vote-panel');
+        panel.querySelectorAll('button[data-call]').forEach(function(b) { b.onclick = function() { let o = voteCallable().find(function(x) { return voteId(x.rec) == b.dataset.vid; }); if (o) callVote(o); }; });
+        let tick = function() { let el = panel.querySelector('.jp-lastcall-count'); if (!el || !el.isConnected) return; let left = Math.max(0, Math.ceil((until - Date.now()) / 1000)); el.textContent = left + '…'; if (left > 0) setTimeout(tick, 250); };
+        tick();
+        setHint('');
     }
 
     // ---- getting into a game -------------------------------------------------------
@@ -3508,8 +3804,18 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let players = function(present) {
             return '<table class="jp-standings jp-inline">' + st.players.map(function(p) { let here = present && present[p.user_id]; return '<tr><td>' + esc(byId[p.user_id]) + (p.user_id == room.host ? ' <span class="jp-note">(host)</span>' : '') + (p.user_id == JPOnline.user.id ? ' <span class="jp-note">(you)</span>' : '') + '</td><td>' + (here ? '<span class="jp-plus">here</span>' : '<span class="jp-note">not yet…</span>') + '</td></tr>'; }).join('') + '</table>';
         };
-        try { await JPOnline.connect(room.id, room.host, function(present) { onlinePresence(present); let pl = panel.querySelector('.jp-online-players'); if (pl && pl.isConnected) pl.innerHTML = players(present); }); }
-        catch (e) { panel.querySelector('.jp-online-status').textContent = 'Could not join the game: ' + e.message; return; }
+        // The realtime service can take a minute or more to come up when nobody has used it
+        // for days; keep trying for a while rather than sending everyone back to the lobby.
+        let joined = false, t0 = Date.now();
+        for (let attempt = 1; !joined && alive(tok); attempt++) {
+            try { await JPOnline.connect(room.id, room.host, function(present) { onlinePresence(present); let pl = panel.querySelector('.jp-online-players'); if (pl && pl.isConnected) pl.innerHTML = players(present); }); joined = true; }
+            catch (e) {
+                if (Date.now() - t0 > 180000) { panel.querySelector('.jp-online-status').textContent = 'Could not join the game: ' + e.message + ' Leave and try again in a minute.'; return; }
+                panel.querySelector('.jp-online-status').innerHTML = 'The game service is waking up — trying again (' + attempt + ')…';
+                await new Promise(function(r) { setTimeout(r, 4000); });
+            }
+        }
+        if (!alive(tok)) return;
         if (!alive(tok)) return;
         panel.querySelector('.jp-online-status').innerHTML = hostHere() ? 'Waiting for everyone to arrive. The game starts on its own when they have.' : 'Waiting for the host to start the game…';
         panel.querySelector('.jp-online-players').innerHTML = players(JPOnline.presence());
@@ -3635,20 +3941,41 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         })();
         setHint('');
     }
+    // Says how a player's microphone check went, for the lobby table.
+    function micLabel(m) { return m == 'ok' ? '<span class="jp-plus">mic ok</span>' : m == 'quiet' ? '<span class="jp-note" title="The microphone opened but heard almost nothing: check the input level">mic quiet</span>' : m == 'none' ? '<span class="jp-minus" title="No microphone could be opened">no mic</span>' : m == 'typing' ? '<span class="jp-note">typing</span>' : '<span class="jp-note">mic untested</span>'; }
+    function copyText(text, btn, done) {
+        let ok = function() { if (btn) { let was = btn.textContent; btn.textContent = done || 'Copied'; setTimeout(function() { btn.textContent = was; }, 1600); } };
+        try { navigator.clipboard.writeText(text).then(ok, function() { fallback(); }); } catch (e) { fallback(); }
+        function fallback() { try { let ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); ok(); } catch (e) { } }
+    }
     function showLobby(st) {
-        let tok = ++runToken, room = st.room, host = room.host == JPOnline.user.id, stopped = false;
+        let tok = ++runToken, room = st.room, host = room.host == JPOnline.user.id, stopped = false, me = JPOnline.user.id;
         let link = 'https://j-archive.com/showgame.php?game_id=' + room.archive_game_id + '#jplive-join=' + room.code;
+        JPOnline.warmup();
         let render = function(st) {
-            let players = st.players.map(function(p) { return '<tr><td>' + esc(p.name) + (p.user_id == st.room.host ? ' <span class="jp-note">(host)</span>' : '') + '</td><td class="jp-note">' + (p.ranked_games ? 'rating ' + p.elo : 'unrated') + '</td></tr>'; }).join('');
+            let mine = st.players.find(function(p) { return p.user_id == me; }) || { };
+            let others = st.players.filter(function(p) { return p.user_id != st.room.host; });
+            let allReady = others.length && others.every(function(p) { return p.ready; });
+            let players = st.players.map(function(p) {
+                let isMe = p.user_id == me;
+                return '<tr' + (isMe ? ' class="jp-you"' : '') + '><td>' + esc(p.name) + (p.user_id == st.room.host ? ' <span class="jp-note">(host)</span>' : '') + (isMe ? ' <span class="jp-note">(you)</span>' : '') + '</td>' +
+                    '<td class="jp-note">' + (p.ranked_games ? 'rating ' + p.elo : 'unrated') + '</td>' +
+                    '<td>' + micLabel(p.mic) + (isMe ? ' <button class="jp-btn jp-secondary jp-mic-test" style="padding:1px 8px;font-size:0.85em">Test my mic</button>' : '') + '</td>' +
+                    '<td>' + (p.user_id == st.room.host ? '<span class="jp-note">starts the game</span>' : p.ready ? '<span class="jp-plus">ready</span>' : '<span class="jp-note">not ready</span>') +
+                    (isMe && p.user_id != st.room.host ? ' <button class="jp-btn ' + (p.ready ? 'jp-secondary' : '') + ' jp-ready" style="padding:1px 10px;font-size:0.85em">' + (p.ready ? 'Unready' : 'Ready') + '</button>' : '') + '</td></tr>';
+            }).join('');
             let s = st.room.settings || { };
             let summary = (s.contestantsOn === false ? 'no archive contestants' : 'with the archive contestants (' + (DIFFICULTY[s.difficulty] ? DIFFICULTY[s.difficulty].label.replace(/ \(.*$/, '') : s.difficulty) + ')') + ' · ' + s.buzzWindowSeconds + ' s to ring in · ' + s.answerSeconds + ' s to respond';
-            return '<h1>Lobby ' + esc(st.room.code) + '</h1>' +
+            let status = host ? (st.players.length < 2 ? 'Waiting for at least one more player…' : allReady ? 'Everyone\'s ready.' : 'Waiting for ' + joinNatural(others.filter(function(p) { return !p.ready; }).map(function(p) { return esc(p.name); })) + ' to be ready…')
+                              : (mine.ready ? 'Ready — waiting for ' + esc((st.players.find(function(p) { return p.user_id == st.room.host; }) || { }).name || 'the host') + ' to start the game…' : 'Test your microphone, then press Ready.');
+            return '<h1>Lobby <span class="jp-code" title="Click to copy">' + esc(st.room.code) + '</span></h1>' +
                 '<p>Game: <b>' + esc(st.room.archive_game_id == +gameId() ? gameTitle() : 'archive game ' + st.room.archive_game_id) + '</b> · ' + esc(summary) + '</p>' +
-                '<p>Invite: tell them the code <b style="font-size:1.4em;letter-spacing:0.1em">' + esc(st.room.code) + '</b> (Join on their setup screen), or send this link: <input class="jp-invite" readonly value="' + esc(link) + '" style="width:100%;min-width:20em"></p>' +
-                '<table class="jp-standings jp-inline">' + players + '</table>' +
-                '<p class="jp-online-status jp-note">' + (host ? (st.players.length >= 2 ? 'Ready when you are.' : 'Waiting for at least one more player…') : 'Waiting for ' + esc((st.players.find(function(p) { return p.user_id == st.room.host; }) || { }).name || 'the host') + ' to start the game…') + '</p>' +
-                '<p>' + (host ? '<button class="jp-btn jp-start-room"' + (st.players.length >= 2 ? '' : ' disabled') + '>Start the game</button> <button class="jp-btn jp-secondary jp-room-settings">Settings</button> ' : '') + '<button class="jp-btn jp-secondary jp-cancel">Leave</button></p>' +
-                (host ? '<p class="jp-note">The lobby plays this page\'s game with your current settings (contestants, speed, timing); Settings changes them for everyone. Voices and microphones stay each player\'s own.</p>' : '');
+                '<p>Invite: the code <b class="jp-code" style="font-size:1.3em;letter-spacing:0.1em" title="Click to copy">' + esc(st.room.code) + '</b> <button class="jp-btn jp-secondary jp-copy-code" style="padding:2px 10px;font-size:0.88em">Copy code</button> (Join on their setup screen), or the link <button class="jp-btn jp-secondary jp-copy-link" style="padding:2px 10px;font-size:0.88em">Copy link</button></p>' +
+                '<table class="jp-standings jp-inline jp-lobby-table">' + players + '</table>' +
+                '<p class="jp-online-status jp-note">' + status + '</p>' +
+                '<p>' + (host ? '<button class="jp-btn jp-start-room"' + (st.players.length >= 2 && allReady ? '' : ' disabled') + '>Start the game</button> <button class="jp-btn jp-secondary jp-room-settings">Settings</button> ' : '') + '<button class="jp-btn jp-secondary jp-cancel">Leave</button></p>' +
+                (host ? '<p class="jp-note">The lobby plays this page\'s game with your settings (contestants, speed, timing) for everyone; Settings changes them. Voices and microphones stay each player\'s own. The game starts when everyone else is ready.</p>'
+                      : '<p class="jp-note">The host\'s settings (contestants, speed, timing) apply to everyone in the lobby — your own settings are for your own games. Your voice and microphone stay yours.</p>');
         };
         let panel = showPanel(render(st));
         let bind = function() {
@@ -3660,9 +3987,31 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (rs) rs.onclick = function() {
                 let form = showPanel('<h1>Lobby settings</h1>' + settingsForm() + '<p><button class="jp-btn jp-back">Back to the lobby</button></p>');
                 bindSettingsForm(form);
-                form.querySelector('.jp-back').onclick = async function() { try { let s3 = await JPOnline.setRoom(room.id, +gameId(), roomSettingsFromS()); panel = showPanel(render(s3)); bind(); } catch (e) { alert(e.message); } };
+                form.querySelector('.jp-back').onclick = async function() { try { let s3 = await JPOnline.setRoom(room.id, +gameId(), roomSettingsFromS()); st = s3; panel = showPanel(render(s3)); bind(); } catch (e) { alert(e.message); } };
             };
-            let inv = q('.jp-invite'); if (inv) inv.onclick = function() { inv.select(); };
+            panel.querySelectorAll('.jp-code').forEach(function(el) { el.style.cursor = 'pointer'; el.onclick = function() { copyText(room.code, null); let note = q('.jp-online-status'); if (note) note.textContent = 'Code copied.'; }; });
+            let cc = q('.jp-copy-code'); if (cc) cc.onclick = function() { copyText(room.code, cc); };
+            let cl = q('.jp-copy-link'); if (cl) cl.onclick = function() { copyText(link, cl); };
+            let rb = q('.jp-ready');
+            if (rb) rb.onclick = async function() {
+                let mine = st.players.find(function(p) { return p.user_id == me; }) || { };
+                try { let s2 = await JPOnline.setPlayerStatus(room.id, !mine.ready, null); if (s2 && s2.room) { st = s2; panel = showPanel(render(st)); bind(); } } catch (e) { alert(e.message); }
+            };
+            let mt = q('.jp-mic-test');
+            if (mt) mt.onclick = async function() {
+                mt.disabled = true; mt.textContent = 'Listening… say something';
+                let result = 'none';
+                if (S.micMode == 'off') result = 'typing';
+                else {
+                    try {
+                        let c = JPAudio.micChoice ? await JPAudio.micChoice(S.micDevice || 'auto') : null;
+                        let r = await JPAudio.sampleInputLevel(2500, c && c.id && c.id != 'default' ? c.id : null);
+                        result = !r ? 'none' : r.peak >= 0.08 ? 'ok' : 'quiet';
+                        mt.textContent = !r ? 'No microphone' : (r.label ? r.label + ': ' : '') + (result == 'ok' ? 'heard you' : 'very quiet');
+                    } catch (e) { result = 'none'; mt.textContent = 'No microphone'; }
+                }
+                try { let s2 = await JPOnline.setPlayerStatus(room.id, null, result); if (s2 && s2.room) { st = s2; setTimeout(function() { if (!stopped && panel.isConnected) { panel = showPanel(render(st)); bind(); } }, 1800); } } catch (e) { }
+            };
         };
         bind();
         (async function() {
@@ -3673,7 +4022,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 if (!s2 || !s2.room) { if (!stopped) { showPanel('<h1>The lobby closed</h1><p>The host left.</p><p><button class="jp-btn jp-cancel">Back</button></p>').querySelector('.jp-cancel').onclick = function() { showSetup(); }; } return; }
                 if (s2.room.status == 'playing') { stopped = true; goToRoom(s2.room.archive_game_id, room.id); return; }
                 if (s2.room.status == 'abandoned') { stopped = true; showPanel('<h1>The lobby closed</h1><p>The host left.</p><p><button class="jp-btn jp-cancel">Back</button></p>').querySelector('.jp-cancel').onclick = function() { showSetup(); }; return; }
-                if (JSON.stringify(s2.players) != JSON.stringify(st.players) || JSON.stringify(s2.room.settings) != JSON.stringify(st.room.settings)) { st = s2; if (!panel.querySelector('.jp-form')) { panel = showPanel(render(st)); bind(); } }
+                if (JSON.stringify(s2.players) != JSON.stringify(st.players) || JSON.stringify(s2.room.settings) != JSON.stringify(st.room.settings)) { st = s2; if (!panel.querySelector('.jp-form') && !panel.querySelector('.jp-mic-test:disabled')) { panel = showPanel(render(st)); bind(); } }
             }
         })();
         setHint('');
@@ -3705,7 +4054,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // Read-only view of the game state, for debugging in the console
     // (e.g. jpLiveDebug.state.scores) and for automated tests.
-    window.jpLiveDebug = { get state() { return G; }, get settings() { return S; }, parsePick: parsePick, parseWager: parseWager, coryatScore: coryatScore, standingsSentence: standingsSentence, roundOpeningLine: roundOpeningLine, showFinalStandings: showFinalStandings, showRoundEnd: function(r) { roundEndPanel(r); return 'ok'; }, rewindTo: rewindTo, clueInfo: clueInfo, mediaClue: mediaClue, renderVotes: renderVotes };
+    window.jpLiveDebug = { get state() { return G; }, get settings() { return S; }, parsePick: parsePick, parseWager: parseWager, coryatScore: coryatScore, standingsSentence: standingsSentence, roundOpeningLine: roundOpeningLine, showFinalStandings: showFinalStandings, showRoundEnd: function(r) { roundEndPanel(r); return 'ok'; }, rewindTo: rewindTo, clueInfo: clueInfo, mediaClue: mediaClue, voteCallable: function() { return voteCallable(); }, callVote: callVote, callPause: callPause, votePanel: renderVotePanel, lastCallPanel: showLastCallPanel, pausedPanel: function(by) { return runPausedPanel(by, runToken, false, 1); }, offers: function() { setHint('<b>Bob</b> has control and is picking…' + callOffersHtml()); bindCallOffers(); } };
 
     // ---- high scores (this browser; kept in localStorage for j-archive.com) ----
     function loadScores() { try { return JSON.parse(localStorage.getItem('jpLiveScores') || '[]'); } catch (e) { return [ ]; } }
@@ -3968,7 +4317,6 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         recordScore();
         refreshRecord();                                  // results may have been edited since the game ended
         applyMicHold();                                   // the game is over: let the mic go
-        if (online()) renderVotes();                      // the box in the corner goes
         let saved = loadScores(), multi = humans().length > 1;
         let sections = (G.recordedAll || [ G.recorded ]).map(function(entry) {
             let hm = entry.human || entryPlayer(entry), h = (G.hstats || { })[hm] || { };

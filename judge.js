@@ -47,9 +47,23 @@ var JPJudge = (function() {
     // "Thomas (Tom) Hanks"       -> "thomas hanks", "thomas tom hanks", "hanks"
     // "a Bloody Mary"            -> "bloody mary", "mary"
     // "Cheryl Strayed or Wild"   -> "cheryl strayed", "wild"
-    function variants(correctHtml) {
+    // A surname alone stands for a person's name only: every word of the answer
+    // capitalized ("Isaac Newton", "Ludwig van Beethoven"), two to five words, no
+    // digits. "sulfur-bellied whale" is not a name, so "whale" alone doesn't count.
+    const NAME_PARTICLES = /^(de|da|del|della|di|du|des|dos|das|van|von|der|den|ter|la|le|al|el|bin|ibn|y|of|the|and|st|mc|mac|o)$/i;
+    function looksLikeName(text) {
+        let t = String(text || '').replace(/[.,'’]/g, '').trim();
+        if (!t || /\d/.test(t) || !/[a-z]/.test(t)) return false;           // all capitals: can't tell
+        let words = t.split(/[\s-]+/).filter(Boolean);
+        let real = words.filter(function(w) { return !NAME_PARTICLES.test(w); });
+        if (real.length < 2 || words.length > 5) return false;
+        return real.every(function(w) { return /^[A-Z]/.test(w); });
+    }
+
+    function variants(correctHtml) { return variantInfo(correctHtml).all; }
+    function variantInfo(correctHtml) {
         let raw = stripHtml(correctHtml).trim();
-        let out = new Set();
+        let out = new Set(), surnames = new Set();
         let add = function(s) { let n = normalize(s); if (n) out.add(n); };
 
         let bases = [ raw ];
@@ -73,16 +87,21 @@ var JPJudge = (function() {
                 if (/^(or|aka|also accept(ed)?|accept)\s+/i.test(inner))
                     add(inner.replace(/^(or|aka|also accept(ed)?|accept)\s+/i, ''));
             }
-            // Surname / last word for multi-word answers.
+            // Surname alone, for a person's name only.
             let nz = normalize(noParens);
             let toks = nz.split(' ');
-            if (toks.length >= 2) {
+            if (toks.length >= 2 && looksLikeName(noParens.replace(/^\s*(a|an|the)\s+/i, ''))) {
                 let last = toks[toks.length - 1];
-                if (last.length >= 4 && !/^\d+$/.test(last))
-                    out.add(last);
+                if (last.length >= 4 && !/^\d+$/.test(last) && !out.has(last)) { out.add(last); surnames.add(last); }
             }
         }
-        return Array.from(out);
+        return { all: Array.from(out), surnames: surnames };
+    }
+    // The words of u that aren't in v and aren't filler ("isaac newton i think" -> none).
+    function extraWords(u, v) {
+        let vw = { };
+        for (let w of v.split(' ')) vw[w] = true;
+        return u.split(' ').filter(function(w) { return w && !vw[w] && !FILLER.test(w) && !/^(guess|believe|sure|pretty)$/.test(w); });
     }
 
     function levenshtein(a, b) {
@@ -117,7 +136,7 @@ var JPJudge = (function() {
         let u = normalize(userText || '');
         if (!u)
             return { correct: false, reason: 'no answer', normalized: u };
-        let vs = variants(correctHtml);
+        let info = variantInfo(correctHtml), vs = info.all;
         let uCompact = u.replace(/\s+/g, '');
 
         for (let v of vs) {
@@ -126,8 +145,14 @@ var JPJudge = (function() {
         }
         for (let v of vs) {
             // User said the answer plus extra words ("isaac newton the physicist").
-            if (v.length >= 4 && wholeWordContains(u, v))
+            // A surname alone must come with nothing else that matters: "wayne newton"
+            // isn't Isaac Newton. Two answers at once ("london or paris") is a hedge.
+            if (v.length >= 4 && wholeWordContains(u, v)) {
+                let extra = extraWords(u, v);
+                if (info.surnames.has(v) && extra.length) continue;
+                if (wholeWordContains(u, 'or') && !wholeWordContains(v, 'or') && extra.length) continue;
                 return { correct: true, reason: 'contains', normalized: u, matched: v };
+            }
         }
         for (let v of vs) {
             // Fuzzy: forgive typos / mis-hearings on answers of a reasonable length.
@@ -267,5 +292,5 @@ var JPJudge = (function() {
         return t.split(' ').filter(Boolean).every(function(w) { return FILLER.test(w); });
     }
 
-    return { normalize: normalize, variants: variants, judge: judge, judgeAny: judgeAny, similarity: similarity, stripHtml: stripHtml, contentFree: contentFree, soundFold: soundFold };
+    return { normalize: normalize, variants: variants, variantInfo: variantInfo, looksLikeName: looksLikeName, judge: judge, judgeAny: judgeAny, similarity: similarity, stripHtml: stripHtml, contentFree: contentFree, soundFold: soundFold };
 })();

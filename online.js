@@ -126,10 +126,18 @@ window.JPOnline = (function() {
     // Broadcast messages between the players of one room, with presence, an
     // inbox that waitFor() reads (a message may land before the game is ready
     // for it), and a clock synced to the host's for the buzzer race.
-    let channel = null, roomId = null, inbox = [ ], seq = 0, listeners = [ ], present = { }, presenceCb = null, offset = 0, hostId = null;
+    let channel = null, roomId = null, inbox = [ ], seq = 0, listeners = [ ], present = { }, presenceCb = null, offset = 0, hostId = null, rtt = null;
+    // Catch-up after a dropped connection: every message carries its sender's own running
+    // number (n). Each client keeps what it sent and the highest number it has seen from
+    // each sender; when its channel comes back after a drop (a Wi-Fi blip, a laptop lid, a
+    // tab Chrome put to sleep) it asks everyone to send again what came after those
+    // numbers, and a message seen twice is dropped. Without this, a message missed during
+    // the drop was gone for good and that player's game stalled ("Connection lost").
+    let sentN = 0, sentLog = [ ], lastFrom = { }, seenIds = { }, joins = 0, reconnectCb = null;
     function connect(id, host, onPresence) {
         disconnect();
-        roomId = id; hostId = host; presenceCb = onPresence || null; inbox = [ ]; present = { }; offset = 0;
+        roomId = id; hostId = host; presenceCb = onPresence || null; inbox = [ ]; present = { }; offset = 0; rtt = null;
+        sentN = 0; sentLog = [ ]; lastFrom = { }; seenIds = { }; joins = 0;
         return new Promise(function(resolve, reject) {
             let done = false;
             channel = client.channel('room:' + id, { config: { private: true, broadcast: { self: false, ack: false }, presence: { key: user.id } } });
@@ -142,13 +150,17 @@ window.JPOnline = (function() {
             });
             channel.subscribe(function(status, err) {
                 mlog('channel ' + status + (err ? ': ' + err.message : ''));
-                if (status == 'SUBSCRIBED') { channel.track({ user_id: user.id, name: profile ? profile.name : '?', at: Date.now() }); if (!done) { done = true; resolve(true); } }
+                if (status == 'SUBSCRIBED') {
+                    channel.track({ user_id: user.id, name: profile ? profile.name : '?', at: Date.now() });
+                    if (++joins > 1) { mlog('rejoined; asking for what was missed'); send('replay', { since: Object.assign({ }, lastFrom) }); if (reconnectCb) { try { reconnectCb(); } catch (e) { } } }
+                    if (!done) { done = true; resolve(true); }
+                }
                 else if ((status == 'CHANNEL_ERROR' || status == 'TIMED_OUT' || status == 'CLOSED') && !done) { done = true; reject(new Error('could not join the game channel (' + status + ')')); }
             });
             setTimeout(function() { if (!done) { done = true; reject(new Error('the game channel did not answer')); } }, 15000);
         });
     }
-    function disconnect() { if (channel) { try { client.removeChannel(channel); } catch (e) { } } channel = null; roomId = null; listeners = [ ]; }
+    function disconnect() { if (channel) { try { client.removeChannel(channel); } catch (e) { } } channel = null; roomId = null; listeners = [ ]; reconnectCb = null; }
     // The realtime service goes cold when nobody has opened a channel for days, and the
     // first players then wait minutes at "Joining the game…" while it comes up. Opening a
     // throwaway public channel as soon as someone heads for online play wakes it early.
@@ -165,6 +177,13 @@ window.JPOnline = (function() {
     }
     function deliver(p) {
         if (!p || !p.t) return;
+        if (p.from && p.n != null) {
+            let mid = p.from + ':' + p.n;
+            if (seenIds[mid]) return;   // a replayed message this client already has
+            seenIds[mid] = true;
+            if (!(lastFrom[p.from] >= p.n)) lastFrom[p.from] = p.n;
+        }
+        if (p.t == 'replay') { resend(p); return; }
         p.seq = ++seq; p.rx = Date.now();   // receipt time (never `at`: the host's lights message names its moment in `at`)
         mlog('<- ' + p.t + ' ' + JSON.stringify(p).slice(0, 120));
         if (p.t == 'ping' && user && hostId == user.id) { send('pong', { to: p.from, t0: p.t0, th: Date.now() }); return; }
@@ -174,9 +193,20 @@ window.JPOnline = (function() {
     function send(type, data) {
         if (!channel) return;
         let p = Object.assign({ t: type, from: user.id, ts: Date.now() }, data || { });
+        if (type != 'ping' && type != 'pong' && type != 'replay') { p.n = ++sentN; sentLog.push(p); if (sentLog.length > 400) sentLog.shift(); }
         mlog('-> ' + type + ' ' + JSON.stringify(data || { }).slice(0, 120));
         channel.send({ type: 'broadcast', event: 'g', payload: p });
     }
+    // Someone came back from a drop: send again what they missed of ours (once each; they drop repeats).
+    function resend(req) {
+        if (!channel || !user) return;
+        let since = req.since && req.since[user.id] != null ? +req.since[user.id] : 0;
+        let missed = sentLog.filter(function(p) { return p.n > since; }).slice(-120);
+        mlog('replay for ' + req.from + ': ' + missed.length + ' message(s) after ' + since);
+        // Paced (20 a second), so a long catch-up stays under the service's message rate.
+        missed.forEach(function(p, i) { setTimeout(function() { if (channel) channel.send({ type: 'broadcast', event: 'g', payload: p }); }, i * 50); });
+    }
+    function onReconnect(fn) { reconnectCb = fn || null; }
     function on(type, fn, pred) { let l = { type: type, fn: fn, pred: pred }; listeners.push(l); return function() { let i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1); }; }
     // The first unconsumed message of that type matching pred, waiting up to timeoutMs; null on timeout.
     // The promise has a cancel(): it stops listening without consuming anything and resolves null
@@ -217,10 +247,11 @@ window.JPOnline = (function() {
             let t0 = Date.now();
             send('ping', { t0: t0 });
             let pong = await waitFor('pong', function(p) { return p.to == user.id && p.t0 == t0; }, 2500);
-            if (pong) { let rtt = Date.now() - t0; let off = pong.th - (t0 + rtt / 2); if (!best || rtt < best.rtt) best = { rtt: rtt, off: off }; }
+            if (pong) { let r = Date.now() - t0; let off = pong.th - (t0 + r / 2); if (!best || r < best.rtt) best = { rtt: r, off: off }; }
             await new Promise(function(r) { setTimeout(r, 250); });
         }
         if (best || offset == 0) offset = best ? best.off : 0;   // a re-sync that got no answer keeps the old offset
+        if (best) rtt = best.rtt;
         mlog('clock offset ' + offset + ' ms' + (best ? ' (rtt ' + best.rtt + ')' : ' (no pong)'));
         return offset;
     }
@@ -232,7 +263,7 @@ window.JPOnline = (function() {
         syncUp: syncUp, myResults: myResults, leaderboard: leaderboard,
         createRoom: createRoom, setPlayerStatus: setPlayerStatus, joinRoom: joinRoom, roomState: roomState, setRoom: setRoom, startRoom: startRoom, leaveRoom: leaveRoom, abandonRoom: abandonRoom, finishRoom: finishRoom,
         enqueue: enqueue, matchMe: matchMe, dequeue: dequeue, reroll: reroll, noteMaxGame: noteMaxGame,
-        connect: connect, warmup: warmup, disconnect: disconnect, send: send, on: on, waitFor: waitFor, waitForAny: waitForAny, drain: drain, get log() { return log; }, isPresent: isPresent, presence: presence, syncClock: syncClock, hostNow: hostNow,
+        connect: connect, warmup: warmup, disconnect: disconnect, send: send, on: on, waitFor: waitFor, waitForAny: waitForAny, drain: drain, get log() { return log; }, isPresent: isPresent, presence: presence, syncClock: syncClock, hostNow: hostNow, onReconnect: onReconnect, get rtt() { return rtt; },
         get roomId() { return roomId; }, get hostId() { return hostId; }, log: log,
     };
 })();

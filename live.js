@@ -2327,7 +2327,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 let who = ev.who;
                 G.stats.buzzWins++; hstat(who, 'buzzWins');
                 if (!(online() && G.online.localBuzz && isMe(who))) JPAudio.play('buzz');   // yours already sounded when you pressed
-                if (online() && G.online.localBuzz && !isMe(who)) setHint('<b>' + esc(who) + '</b> beat you to it.');
+                if (online() && G.online.localBuzz && !isMe(who)) setHint('<b>' + esc(who) + '</b> beat you to it.' + raceTimesNote());
                 lightPodium(who);
                 setLit(false);
                 let res = await userAnswers(info, S.answerSeconds, tok, info.value, who);
@@ -2451,6 +2451,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 finish({ type: 'user', who: who });
             };
         });
+    }
+    // After a lost race online: each ring-in's time from that player's own lights, e.g. "(Kathy 0.21 s, you 0.24 s)".
+    function raceTimesNote() {
+        let t = G.online && G.online.lastTimes;
+        if (!t || !t.length) return '';
+        let me = G.online.me;
+        return ' <span class="jp-note">(' + t.slice().sort(function(a, b) { return a.off - b.off; }).map(function(x) { return (x.who == me ? 'you' : esc(x.who)) + ' ' + (x.off / 1000).toFixed(2) + ' s'; }).join(', ') + ')</span>';
     }
     // Per-human counters (buzzer races won, lockouts), for the records of a multiplayer game.
     function hstat(who, key) { if (!G.hstats) G.hstats = { }; let h = G.hstats[who] || (G.hstats[who] = { }); h[key] = (h[key] || 0) + 1; }
@@ -3127,7 +3134,13 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     async function fromPlayerOrForce(type, who, pred, timeoutMs, forcedData) {
         let id = onlineIdOf(who), hostId = G.online.hostId;
         let match = function(p) { return (p.from == id || (p.forced && p.from == hostId && p.who == who)) && (!pred || pred(p)); };
-        let wait = hostHere() ? (JPOnline.isPresent(id) ? timeoutMs : 1500) : timeoutMs + 12000;
+        // A player who has dropped off gets up to 30 seconds from when they went away to come
+        // back (their channel rejoins and the catch-up brings their answer) before the host
+        // decides for them; it used to be a second and a half, which cost a player on a
+        // brief Wi-Fi blip their Final Jeopardy! wager.
+        let goneFor = G.online.goneAt && G.online.goneAt[who] ? Date.now() - G.online.goneAt[who] : 0;
+        let wait = hostHere() ? (JPOnline.isPresent(id) ? timeoutMs : Math.min(timeoutMs, Math.max(1500, 30000 - goneFor))) : timeoutMs + 12000;
+        if (hostHere() && !JPOnline.isPresent(id) && wait > 1500) setHint('Waiting for <b>' + esc(who) + '</b> to reconnect…');
         let ev = await JPOnline.waitFor(type, match, wait);
         if (ev) return ev;
         if (hostHere()) { let p = Object.assign({ forced: true, who: who }, forcedData || { }); JPOnline.send(type, p); return Object.assign({ from: hostId }, p); }
@@ -3157,7 +3170,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         for (let p of G.online.players) {
             let nm = G.online.byId[p.user_id];
             let gone = !present[p.user_id];
-            if (gone != !!G.online.gone[nm]) { G.online.gone[nm] = gone; let el = podium(nm); if (el) el.classList.toggle('jp-gone', gone); }
+            if (gone != !!G.online.gone[nm]) {
+                G.online.gone[nm] = gone; let el = podium(nm); if (el) el.classList.toggle('jp-gone', gone);
+                (G.online.goneAt || (G.online.goneAt = { }))[nm] = gone ? Date.now() : 0;
+            }
         }
     }
 
@@ -3168,7 +3184,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // that moment; the host takes the smallest one that arrives within a short
     // grace, against the archived contestants' reaction times when they play too.
     async function onlineLights(num, attempt, tok) {
-        JPOnline.send('ready', { num: num, attempt: attempt });
+        JPOnline.send('ready', { num: num, attempt: attempt, rtt: JPOnline.rtt });
         let at;
         if (hostHere()) {
             let need = G.online.players.map(function(p) { return p.user_id; }).filter(function(id) { return id != G.online.myId && JPOnline.isPresent(id); });
@@ -3178,6 +3194,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 let ev = await JPOnline.waitFor('ready', function(p) { return p.num == num && p.attempt == attempt && need.indexOf(p.from) >= 0; }, deadline - Date.now());
                 if (!ev) break;
                 need.splice(need.indexOf(ev.from), 1);
+                if (+ev.rtt > 0) (G.online.rtts || (G.online.rtts = { }))[ev.from] = +ev.rtt;
                 need = need.filter(function(id) { return JPOnline.isPresent(id); });
             }
             if (!alive(tok)) return null;
@@ -3200,20 +3217,36 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let at = await onlineLights(num, attempt, tok);
         if (at == null) return { type: 'timeout', lost: true };
         setLit(true); JPAudio.play('lights');
-        (G.online.lights || (G.online.lights = [ ])).push({ num: num, attempt: attempt, at: at, lit: JPOnline.hostNow() });   // for the tests: the same moment on every screen
+        // Reaction times count from the moment the lights were on this screen, not from the
+        // moment named: a timer that fired late or a slow frame no longer counts against
+        // the player whose screen lit late (two frames: the lights have been drawn by then).
+        let litAt = JPOnline.hostNow();
+        try { requestAnimationFrame(function() { requestAnimationFrame(function() { litAt = Math.max(litAt, JPOnline.hostNow()); }); }); } catch (e) { }
+        (G.online.lights || (G.online.lights = [ ])).push({ num: num, attempt: attempt, at: at, lit: litAt });   // for the tests: the same moment on every screen
         setTimer(S.buzzWindowSeconds, 'green');
         setHint(hostHere() || true ? 'Ring in: ' + ringInHint() + '.' : '');
         let me = G.online.me;
         return new Promise(function(resolve) {
             let done = false, timers = [ ], offs = [ ], cands = [ ], scheduled = false;
             function finish(ev) { if (done) return; done = true; timers.forEach(clearTimeout); offs.forEach(function(f) { f(); }); handlers.buzz = null; resolve(ev); }
-            function candidate(c) { cands.push(c); if (!scheduled) { scheduled = true; timers.push(setTimeout(resolveNow, 250)); } }
+            // The host waits a moment after the first ring-in for slower ones to arrive: long enough
+            // for the slowest player's messages (from the round trips they reported), at least
+            // 300 ms and at most a second. A fixed 250 ms favored the host, whose own ring-in
+            // arrives at once, over a player whose message takes longer than that to come in.
+            function grace() {
+                let r = 0, rt = G.online.rtts || { };
+                for (let id in rt) if (JPOnline.isPresent(id)) r = Math.max(r, rt[id]);
+                return clamp(Math.round(r * 0.75) + 100, 300, 1000);
+            }
+            function candidate(c) { cands.push(c); if (!scheduled) { scheduled = true; timers.push(setTimeout(resolveNow, grace())); } }
             function resolveNow() {
                 if (done) return;
                 cands.sort(function(a, b) { return a.off - b.off; });
                 let c = cands[0];
                 if (!c) { JPOnline.send('buzzwin', { num: num, attempt: attempt, type: 'timeout' }); finish({ type: 'timeout' }); return; }
-                JPOnline.send('buzzwin', { num: num, attempt: attempt, type: c.type, who: c.who, right: c.right, off: c.off });
+                let times = cands.filter(function(x) { return x.type == 'user'; }).map(function(x) { return { who: x.who, off: Math.round(x.off) }; });
+                JPOnline.send('buzzwin', { num: num, attempt: attempt, type: c.type, who: c.who, right: c.right, off: c.off, times: times });
+                G.online.lastTimes = times;
                 finish(c.type == 'user' ? { type: 'user', who: c.who } : { type: 'contestant', who: c.who, right: c.right, t: c.off });
             }
             handlers.buzz = function(who) {
@@ -3221,7 +3254,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 let now = JPClock.now();
                 if (now < getLock(who)) { setLock(who, now + S.lockoutMs); G.stats.lockouts++; hstat(who, 'lockouts'); JPAudio.play('lockout'); flashLocked(); return; }
                 if (!userAllowed(who)) return;
-                let off = Math.max(0, JPOnline.hostNow() - at);
+                let off = Math.max(0, JPOnline.hostNow() - litAt);
                 if (!G.online.localBuzz) {
                     // Right away, on this screen: the podium lights and the buzzer sounds. The host's
                     // word on who was first follows in a moment; if it wasn't you, the light moves.
@@ -3240,6 +3273,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             } else {
                 JPOnline.waitFor('buzzwin', function(p) { return p.num == num && p.attempt == attempt; }, windowMs + 8000).then(function(p) {
                     if (!p) { finish({ type: 'timeout', lost: true }); return; }
+                    G.online.lastTimes = Array.isArray(p.times) ? p.times : null;
                     finish(p.type == 'user' ? { type: 'user', who: p.who } : p.type == 'contestant' ? { type: 'contestant', who: p.who, right: p.right, t: p.off } : { type: 'timeout' });
                 });
             }

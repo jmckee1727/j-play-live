@@ -19,13 +19,37 @@ window.JPOnline = (function() {
     function init() {
         if (ready) return ready;
         if (!available()) return (ready = Promise.resolve(false));
+        // Signing in once keeps you signed in on this computer: the service's sessions don't expire (no time box or
+        // inactivity limit), the session sits in the extension's storage, and its tokens are renewed as you play.
         client = supabase.createClient(URL, KEY, { auth: { storage: storage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'jpLiveAuth' } });
-        ready = client.auth.getSession().then(function(r) {
-            user = r.data && r.data.session ? r.data.session.user : null;
+        ready = restore().then(function(u) {
+            user = u;
             return user ? loadProfile().then(function() { return true; }, function() { return true; }) : false;
         }).catch(function(e) { mlog('session: ' + e.message); return false; });
         client.auth.onAuthStateChange(function(ev, session) { user = session ? session.user : null; if (!user) profile = null; });
         return ready;
+    }
+    // The saved session, renewed if it's old. A renewal that fails because the network or the service is briefly away
+    // (the computer just woke, Wi-Fi is back, the free project is starting up) is tried again a few times, and if it
+    // still can't get through, you stay signed in with the saved session: supabase-js keeps it and renews it once the
+    // service answers. Only a session the service itself has ended (signed out, account deleted) asks for a sign-in.
+    async function restore() {
+        let waits = [ 1000, 3000 ];
+        for (let i = 0; ; i++) {
+            let r = await client.auth.getSession().catch(function(e) { return { data: { }, error: e }; });
+            let session = r.data && r.data.session;
+            if (session) return session.user;
+            let saved = await savedSession();
+            if (!saved) return null;   // nothing saved, or the service ended it
+            if (i >= waits.length) { mlog('session: renewal still failing (' + (r.error ? r.error.message : '?') + '); staying signed in'); return saved.user || null; }
+            mlog('session: renewal failed (' + (r.error ? r.error.message : '?') + '); trying again');
+            await new Promise(function(res) { setTimeout(res, waits[i]); });
+        }
+    }
+    async function savedSession() {
+        let raw = await storage.getItem('jpLiveAuth');
+        if (!raw) return null;
+        try { let o = typeof raw == 'string' ? JSON.parse(raw) : raw; return o && o.refresh_token ? o : null; } catch (e) { return null; }
     }
     async function loadProfile() {
         if (!user) return null;
@@ -47,7 +71,8 @@ window.JPOnline = (function() {
         await loadProfile();
         return profile;
     }
-    async function signOut() { try { await client.auth.signOut(); } catch (e) { } user = null; profile = null; }
+    // Signing out here leaves your other computers signed in (supabase-js's default would end every session).
+    async function signOut() { try { await client.auth.signOut({ scope: 'local' }); } catch (e) { } user = null; profile = null; }
     // Removes the account and everything filed under it.
     async function deleteAccount() {
         let s = await client.auth.getSession();

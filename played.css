@@ -13,7 +13,9 @@
 .jp-continue-x { background: none; border: 0; color: #D69F4C; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
 .jp-continue-last { opacity: 0.9; margin-top: 2px; }
 .jp-continue-actions { margin-top: 8px; }
-.jp-continue a.jp-continue-go, .jp-continue a.jp-continue-go:visited, .jp-continue a.jp-continue-go:hover, .jp-continue .jp-continue-go {
+/* :link too: without it, ".jp-continue a:link" below (the gold links) ties with "a.jp-continue-go" and wins as the later
+   rule, so an unvisited button's label was gold on gold, readable only on hover (John, Nov 7). */
+.jp-continue a.jp-continue-go, .jp-continue a.jp-continue-go:link, .jp-continue a.jp-continue-go:visited, .jp-continue a.jp-continue-go:hover, .jp-continue .jp-continue-go {
     display: inline-block; background: #D69F4C; color: #071277 !important; font-weight: bold; text-decoration: none !important;
     padding: 5px 12px; border-radius: 4px; border: 0; cursor: pointer; font-size: 14px; font-family: inherit;
 }

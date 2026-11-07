@@ -5,7 +5,7 @@
 // contestants), SWEEP=1 (always right, picks in order: runs categories; the success cues
 // must fire), EDIT=1 (edit results from the pause menu), CASCADE=1 (mark a miss right:
 // the contestants who followed give their money back), CONTROL=1 (control follows a
-// "y" during the pick), REWIND=1, REWINDFJ=1, PAUSE=1, MEDIA=none|half|full.
+// "y" during the pick), CONCEDE=1 ("Mark me wrong" during the pick), REWIND=1, REWINDFJ=1, PAUSE=1, MEDIA=none|half|full.
 // Needs test/fixtures/game9537.html (test/fetch_fixture.sh).
 const { JSDOM, VirtualConsole } = require('jsdom');
 const fs = require('fs');
@@ -248,6 +248,32 @@ if (process.env.CONTROL) {
     }, 1200);
   }, 150);
 }
+if (process.env.CONCEDE) {
+  // "Mark me wrong": a response ruled right is taken back from the hint's button while picking.
+  let done = false;
+  const t = setInterval(() => {
+    const st = w.jpLiveDebug && w.jpLiveDebug.state;
+    if (done || !st || st.phase !== 'pick' || doc.querySelector('.jp-dialog') || doc.querySelector('.jp-clue')) return;
+    const rec = (st.results || [])[st.results.length - 1];
+    if (!rec || rec.outcome !== 'right' || rec.kind !== 'clue') return;
+    const btn = doc.querySelector('.jp-hint .jp-solo-offer button[data-call="override"], .jp-solo-offer button[data-call="override"]');
+    if (!btn) return;
+    done = true; clearInterval(t);
+    const me = rec.who || 'You', before = st.scores[me];
+    if (!/Mark me wrong/.test(btn.textContent)) errors.push('concede: button says ' + JSON.stringify(btn.textContent));
+    btn.click();
+    const g = w.jpLiveDebug.state;
+    if (rec.outcome !== 'wrong') errors.push('concede: outcome ' + rec.outcome);
+    if (g.scores[me] !== before - 2 * rec.amount) errors.push('concede: score ' + g.scores[me] + ' expected ' + (before - 2 * rec.amount));
+    setTimeout(() => {
+      const b2 = doc.querySelector('.jp-solo-offer button[data-call="override"]');
+      if (b2 && !/was right/.test(b2.textContent)) errors.push('concede: button after ' + JSON.stringify(b2.textContent));
+      console.log('concede ok: clue ' + rec.num + ' (' + rec.amount + ') marked wrong, ' + before + ' -> ' + g.scores[me] + (b2 ? ', button now ' + JSON.stringify(b2.textContent.trim()) : ', pick restarted'));
+    }, 300);
+    const phrases = [['I was wrong', true], ['mark me wrong', true], ["actually I'm wrong", true], ['I take that back', true], ['science for 400', false], ['potent potables for 200', false], ['wrong answers for 600', false]];
+    for (const [ph, want] of phrases) if (w.jpLiveDebug.concedePhrase(ph) !== want) errors.push('concede phrase ' + JSON.stringify(ph) + ' -> ' + !want);
+  }, 150);
+}
 let lastRound = '';
 const scoreLog = setInterval(() => { const st = w.jpLiveDebug && w.jpLiveDebug.state; if (!st) return; if (st.round !== lastRound) { lastRound = st.round; console.log('round', st.round, 'scores', JSON.stringify(st.scores)); } }, 100);
 // Media clues: the contestants' money moves only as the setting allows.
@@ -256,7 +282,7 @@ const mediaWatch = setInterval(() => {
   const st = w.jpLiveDebug && w.jpLiveDebug.state; if (!st || !st.current) return;
   const num = st.current.num;
   if (num === curNum) return;
-  if (curMedia && curScores && !curDD && !process.env.EDIT && !process.env.CASCADE && !process.env.CONTROL && !process.env.REWIND && !process.env.REWINDFJ) {
+  if (curMedia && curScores && !curDD && !process.env.EDIT && !process.env.CASCADE && !process.env.CONTROL && !process.env.CONCEDE && !process.env.REWIND && !process.env.REWINDFJ) {
     const mode = process.env.MEDIA || 'none';
     const ok = d => d === 0 || (mode === 'half' && Math.abs(d) === curValue / 2) || (mode === 'full' && Math.abs(d) === curValue);
     const hs = new Set(st.humans || ['You']);
@@ -298,6 +324,28 @@ function finish() {
     if (!cues.fjright) errors.push('SWEEP: no Final Jeopardy! cue');
     if (!/ran \d+ categories|ran a category/.test(doc.body.textContent)) errors.push('SWEEP: final screen does not mention the categories run');
   } else if (cues.win && !humans.some(h => Object.keys(st.scores).sort((a, b) => st.scores[b] - st.scores[a])[0] == h)) errors.push('win cue played although no human won');
+  if (process.env.CONCEDE) {
+    // Online, after the game: your own "right" can be taken back with no vote, even with two players;
+    // someone else's still needs a challenge (three players or more) and their votes.
+    const D = w.jpLiveDebug, G = D.state, keep = { online: G.online, results: G.results, phase: G.phase, recorded: G.recorded };
+    const mk = (n) => ({ players: ['a', 'b', 'c'].slice(0, n).map(id => ({ user_id: id })), myId: 'a', me: 'Al', byName: { Al: 'a', Bo: 'b', Cy: 'c' }, votes: {}, lastClueNum: 5 });
+    G.recorded = false; G.phase = 'pick';
+    const check = (what, got, want) => { if (JSON.stringify(got) !== JSON.stringify(want)) errors.push('online ' + what + ': ' + JSON.stringify(got) + ' expected ' + JSON.stringify(want)); };
+    for (const n of [2, 3]) {
+      G.online = mk(n);
+      G.results = [{ id: 0, kind: 'clue', num: 5, who: 'Al', outcome: 'right', amount: 400 }];
+      check(n + 'p own right', D.voteCallable().map(x => [x.want, !!x.self]), [['wrong', true]]);
+      G.results = [{ id: 0, kind: 'clue', num: 5, who: 'Bo', outcome: 'right', amount: 400 }];
+      check(n + 'p other right', D.voteCallable().map(x => [x.want, !!x.self]), n > 2 ? [['wrong', false]] : []);
+      G.results = [{ id: 0, kind: 'clue', num: 5, who: 'Al', outcome: 'wrong', amount: 400 }];
+      check(n + 'p own wrong', D.voteCallable().map(x => [x.want, !!x.self]), [['right', false]]);
+      const selfV = { want: 'wrong', who: 'Al', callerId: 'a' }, chal = { want: 'wrong', who: 'Bo', callerId: 'a' };
+      check(n + 'p self concede', [D.isSelfConcede(selfV), D.voteNeeds(selfV), D.voteVoters(selfV)], [true, 0, []]);
+      check(n + 'p challenge', [D.isSelfConcede(chal), D.voteNeeds(chal) > 0], [false, true]);
+    }
+    Object.assign(G, keep);
+    console.log('online concede rules checked');
+  }
   console.log('ERRORS:', errors.length);
   errors.slice(0, 10).forEach(e => console.log('  ', e.split('\n').slice(0, 4).join(' | ')));
   if (!doc.querySelector('.jp-again')) console.log('DID NOT REACH THE END. stage:', (doc.querySelector('.jp-stage') || {}).textContent, '| hint:', (doc.querySelector('.jp-hint') || {}).textContent);

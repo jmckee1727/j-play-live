@@ -192,6 +192,7 @@
 .jp-clue-sub .jp-sweep { display: inline-block; color: #071277; background: gold; font-weight: bold; padding: 0 0.45em; border-radius: 0.25em; text-shadow: none; margin-left: 0.3em; }
 .jp-podium .jp-pline .jp-correct { color: #6cff8f; }
 .jp-podium .jp-pline .jp-incorrect { color: #ff7a7a; }
+.jp-podium .jp-pline .jp-pending { color: #fff; }       /* a response the host hasn't ruled on yet */
 
 /* ---- votes and pauses (online): a panel for everyone between clues ---- */
 .jp-panel.jp-vote-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }

@@ -2397,7 +2397,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 await sleep(clamp(gauss(650, 200), 300, 1200), tok);
                 if (!alive(tok)) break;
                 let text = ev.right ? (info.phrase + ' ' + JPJudge.stripHtml(info.abbrev) + '?') : (wrongResponseText(clues[num], ev.who) || '(an incorrect response)');
-                podiumLine(ev.who, '<span class="' + (ev.right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(text) + '</span>');
+                podiumLine(ev.who, '<span class="jp-pending">' + esc(text) + '</span>');     // white until the host rules on it
                 setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text));
                 await csay(ev.who, JPReader.responseToSpeech(text.replace(/^\(|\)$/g, '')), tok);
                 if (!alive(tok)) break;
@@ -2407,6 +2407,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     adjustScore(ev.who, credit);
                     if (userRec) userRec.othersDelta[ev.who] = credit;
                     setControl(ev.who);
+                    podiumLine(ev.who, '<span class="jp-correct">' + esc(text) + '</span>');
                     setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text) + ' &nbsp; <span class="jp-correct">' + esc(pick(HOST_RIGHT)) + '</span>' + creditNote(credit, info.value));
                     await say(pick(HOST_RIGHT), tok);
                     resolved = true;
@@ -2414,6 +2415,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     adjustScore(ev.who, -credit);
                     if (userRec) userRec.othersDelta[ev.who] = -credit;
                     markOut(ev.who, true);
+                    podiumLine(ev.who, '<span class="jp-incorrect">' + esc(text) + '</span>');
                     setSub('<span class="jp-who">' + esc(ev.who) + ':</span> ' + esc(text) + ' &nbsp; <span class="jp-incorrect">' + esc(pick(HOST_WRONG)) + '</span>' + creditNote(credit, info.value));
                     await say(pick(HOST_WRONG), tok);
                     if (!alive(tok)) break;
@@ -2810,13 +2812,14 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             let ddWho = clues[info.num].dd_who;
             let right = ddWho ? ((clues[info.num].scores || { })[ddWho] > 0) : false;
             let text = right ? (info.phrase + ' ' + JPJudge.stripHtml(info.abbrev) + '?') : (wrongResponseText(clues[info.num], ddWho || who) || '(an incorrect response)');
-            podiumLine(who, '<span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(text) + '</span>');
+            podiumLine(who, '<span class="jp-pending">' + esc(text) + '</span>');          // white until the host rules on it
             setSub('<span class="jp-who">' + esc(who) + ':</span> ' + esc(text));
             await csay(who, JPReader.responseToSpeech(text.replace(/^\(|\)$/g, '')), tok);
             if (!alive(tok)) return;
             let ddCredit = othersCredit(info, wager);
             (G.cresults || (G.cresults = [ ])).push({ who: who, num: info.num, right: right, value: info.value, dd: true });
             adjustScore(who, right ? ddCredit : -ddCredit);
+            podiumLine(who, '<span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(text) + '</span>');
             setSub('<span class="jp-who">' + esc(who) + ':</span> ' + esc(text) + ' &nbsp; <span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + esc(right ? pick(HOST_RIGHT) : pick(HOST_WRONG)) + '</span>' +
                    (right ? '' : ' &nbsp; <span class="jp-note">Correct response: <em class="correct_response">' + info.correct + '</em></span>') + creditNote(ddCredit, wager));
             let takes = ddCredit ? (right ? ' That takes you to ' : ' That takes you down to ') + money(G.scores[who]) + '.' : ' No change in score on this one.';
@@ -2985,11 +2988,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             await say(intro, tok);
             if (!alive(tok)) return;
             setSub('<span class="jp-who">' + esc(who) + ' wrote:</span> ' + (resp ? esc(resp) : '<i>(nothing)</i>'));
-            podiumLine(who, '<span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + (resp ? esc(resp) : '(nothing)') + '</span>');
+            podiumLine(who, '<span class="jp-pending">' + (resp ? esc(resp) : '(nothing)') + '</span>');     // white until "Correct!" / "Sorry, no."
             await say((who == YOU ? 'You wrote: ' : heShe(who).charAt(0).toUpperCase() + heShe(who).slice(1) + ' wrote: ') + (resp ? JPReader.responseToSpeech(resp) : 'nothing.'), tok);
             if (!alive(tok)) return;
             await pause(600, tok);
             if (!alive(tok)) return;
+            podiumLine(who, '<span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + (resp ? esc(resp) : '(nothing)') + '</span>');
             setSub('<span class="jp-who">' + esc(who) + ' wrote:</span> ' + (resp ? esc(resp) : '<i>(nothing)</i>') + ' &nbsp; <span class="' + (right ? 'jp-correct' : 'jp-incorrect') + '">' + (right ? 'Correct!' : 'Sorry, no.') + '</span> &nbsp; wager ' + money(wager) +
                    (why ? '<div class="jp-clue-why">' + esc(why) + '</div>' : ''));
             if (isYou && right && (!online() || isMe(who))) JPAudio.play('fjright');   // the chime, for someone at this keyboard

@@ -42,6 +42,8 @@
 .jp-cat   { flex: 1; text-transform: uppercase; font-weight: bold; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jp-val   { color: gold; font-weight: bold; font-size: 1.3em; white-space: nowrap; }
 .jp-timer { position: relative; width: 220px; height: 14px; border: 2px solid #fff; border-radius: 3px; overflow: hidden; background: rgba(0,0,0,0.35); }
+.jp-fs-btn { flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-left: -0.4em; padding: 0; background: transparent; color: gold; border: 1px solid rgba(255, 215, 0, 0.55); border-radius: 4px; cursor: pointer; opacity: 0.85; }
+.jp-fs-btn:hover, .jp-fs-btn:focus-visible { opacity: 1; border-color: gold; background: rgba(255, 215, 0, 0.12); }
 .jp-timer-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: gold; }
 .jp-timer.jp-red .jp-timer-fill { background: #ff3b3b; }
 .jp-timer.jp-green .jp-timer-fill { background: #35e06a; }

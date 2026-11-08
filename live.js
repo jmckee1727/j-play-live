@@ -397,7 +397,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         root.style.display = 'none';
         root.innerHTML =
             '<div class="jp-top"><div class="jp-round"></div><div class="jp-cat"></div><div class="jp-val"></div>' +
-            '<div class="jp-timer"><div class="jp-timer-fill"></div></div></div>' +
+            '<div class="jp-timer"><div class="jp-timer-fill"></div></div>' +
+            '<button class="jp-fs-btn" type="button" title="Full screen" aria-label="Full screen"></button></div>' +
             '<div class="jp-stage"></div>' +
             '<div class="jp-answer"><div class="jp-mic"></div><input class="jp-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type your response and press Enter">' +
             '<div class="jp-heard"></div></div>' +
@@ -423,6 +424,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         root.querySelector('.jp-pause-btn').onclick = function() { showPauseMenu(); };
         root.querySelector('.jp-quit-btn').onclick = function() { showPauseMenu(); };
         root.querySelector('.jp-settings-btn').onclick = function() { showPauseMenu(true); };
+        setupFullScreen(root.querySelector('.jp-fs-btn'));
 
         // The mouse is a buzzer too. Mouse-down (not click) rings in, since it
         // fires the moment the button goes down; a click advances when the
@@ -451,6 +453,37 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             else if (e.key == 'Escape') { e.preventDefault(); e.stopPropagation(); showPauseMenu(); }
             else if (handlers.inputBuzz && !U.input.value && isBuzz(e)) { e.preventDefault(); e.stopPropagation(); handlers.inputBuzz(humans()[buzzIndex(e)]); }   // Final Jeopardy!: the buzz key in an empty box rings in
             else e.stopPropagation();
+        });
+    }
+
+    // Full screen: the button at the top right fills the whole screen with the
+    // game (no tabs, address bar or bookmarks); press it again, or Esc, to go
+    // back. The whole page goes full screen, not just the overlay, so the
+    // pause menu and anything else the game opens shows up there too.
+    const FS_ENTER = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const FS_EXIT  = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    function isFullScreen() { return !!document.fullscreenElement; }
+    function exitFullScreen() {
+        if (isFullScreen() && document.exitFullscreen) { try { let p = document.exitFullscreen(); if (p && p.catch) p.catch(function() { }); } catch (e) { } }
+    }
+    function setupFullScreen(btn) {
+        if (!btn) return;
+        let el = document.documentElement;
+        if (!el.requestFullscreen || document.fullscreenEnabled === false) { btn.style.display = 'none'; return; }
+        function paint() {
+            let on = isFullScreen();
+            btn.innerHTML = on ? FS_EXIT : FS_ENTER;
+            btn.title = on ? 'Exit full screen (Esc)' : 'Full screen';
+            btn.setAttribute('aria-label', btn.title);
+            btn.classList.toggle('jp-on', on);
+        }
+        paint();
+        document.addEventListener('fullscreenchange', paint);
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            btn.blur();   // so Space (a buzzer key) can't press it again
+            if (isFullScreen()) { exitFullScreen(); return; }
+            try { let p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function() { }); } catch (err) { }
         });
     }
 
@@ -1715,6 +1748,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         JPClock.resume();
         document.removeEventListener('keydown', onKey, true);
         if (typeof JPEar !== 'undefined') { if (JPEar.setHold) JPEar.setHold(false); JPEar.closeMic(); }
+        exitFullScreen();
         if (U) U.root.style.display = 'none';
     }
 

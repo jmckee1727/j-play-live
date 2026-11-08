@@ -274,6 +274,21 @@ if (process.env.CONCEDE) {
     for (const [ph, want] of phrases) if (w.jpLiveDebug.concedePhrase(ph) !== want) errors.push('concede phrase ' + JSON.stringify(ph) + ' -> ' + !want);
   }, 150);
 }
+// A response under a podium turns green or red only with the host's ruling on the clue strip, never before.
+let earlyColors = [], colorChecks = 0;
+const colorWatch = new w.MutationObserver(() => {
+  for (const pl of doc.querySelectorAll('.jp-podium .jp-pline')) {
+    const c = pl.querySelector('.jp-correct, .jp-incorrect');
+    const txt = pl.textContent;
+    if (!c || pl.dataset.seen === txt + '|' + c.className) continue;
+    pl.dataset.seen = txt + '|' + c.className;
+    if (/Ran the category/.test(txt)) continue;
+    colorChecks++;
+    const sub = doc.querySelector('.jp-clue-sub');
+    if (sub && !sub.querySelector('.jp-correct, .jp-incorrect')) earlyColors.push(JSON.stringify(txt.trim()) + ' colored while the strip said ' + JSON.stringify(sub.textContent.trim().slice(0, 80)));
+  }
+});
+colorWatch.observe(doc.body, { childList: true, subtree: true, characterData: true });
 let lastRound = '';
 const scoreLog = setInterval(() => { const st = w.jpLiveDebug && w.jpLiveDebug.state; if (!st) return; if (st.round !== lastRound) { lastRound = st.round; console.log('round', st.round, 'scores', JSON.stringify(st.scores)); } }, 100);
 // Media clues: the contestants' money moves only as the setting allows.
@@ -346,6 +361,8 @@ function finish() {
     Object.assign(G, keep);
     console.log('online concede rules checked');
   }
+  console.log('podium colors checked:', colorChecks, '· colored before the ruling:', earlyColors.length);
+  if (earlyColors.length) errors.push('podium colored before the ruling: ' + earlyColors.slice(0, 3).join('; '));
   console.log('ERRORS:', errors.length);
   errors.slice(0, 10).forEach(e => console.log('  ', e.split('\n').slice(0, 4).join(' | ')));
   if (!doc.querySelector('.jp-again')) console.log('DID NOT REACH THE END. stage:', (doc.querySelector('.jp-stage') || {}).textContent, '| hint:', (doc.querySelector('.jp-hint') || {}).textContent);

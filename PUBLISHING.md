@@ -14,12 +14,17 @@ branch of the repository and attached to the v0.7.5 GitHub release), the listing
 marquee promo tiles (`store/promo-*.png`), the privacy form (no remote code, no data collected),
 the privacy policy URL, and short test instructions for the reviewer.
 
+**0.14.0 submitted for review on November 7, 2026** (set to publish automatically once it passes;
+0.13.1 stays public until then).
+
 ## Updates later
 
 Bump `"version"` in `manifest.json` (the store rejects a version it has already seen — and its
 `description` must stay under 132 characters), run `./build.sh`, then in the dashboard open the
 item → Package → **Upload new package** with the new zip, and Submit for review again. Users get
-the update automatically. Commit the new zip to the `packages` branch too if you want the record.
+the update automatically. Claude in Chrome can't act on Web Store pages ("The extensions gallery
+cannot be scripted"); drive the dashboard with Chrome's Apple Events JavaScript instead. The
+publisher account is `/u/1/` in Chrome. Commit the new zip to the `packages` branch too if you want the record.
 
 ## Sharing outside the store (friends and family)
 

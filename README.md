@@ -272,7 +272,8 @@ The game ships with small synthesized tones so it works out of the box. Drop fil
 `sounds/` to replace them (mp3, wav, ogg or m4a), named:
 
 `boardfill`, `select`, `lights`, `buzz`, `lockout`, `timeout`, `right`, `wrong`, `dd`, `fj`,
-`think` (the 30-second Final Jeopardy! track; without a file, an original built-in tune plays), `roundend`,
+`think` (the Final Jeopardy! track; without a file, an original calm built-in tune plays, timed to the
+Final Jeopardy! clock; set **Final Jeopardy! music** to Off in Settings for silent thinking time), `roundend`,
 and the success cues: `sweep` (you ran the category — all five clues right), `ddright` (your Daily
 Double was right), `fjright` (your Final Jeopardy! response was right), `win` (you won the game: a
 short original fanfare). Nothing plays for a loss.

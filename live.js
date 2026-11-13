@@ -457,8 +457,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
 
     // Full screen: the button at the top right fills the whole screen with the
-    // game (no tabs, address bar or bookmarks); press it again, or Esc, to go
-    // back. The whole page goes full screen, not just the overlay, so the
+    // game (no tabs, address bar or bookmarks); press it again, F, or Esc, to go
+    // back. F also turns it on. The whole page goes full screen, not just the overlay, so the
     // pause menu and anything else the game opens shows up there too.
     const FS_ENTER = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const FS_EXIT  = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -466,14 +466,23 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function exitFullScreen() {
         if (isFullScreen() && document.exitFullscreen) { try { let p = document.exitFullscreen(); if (p && p.catch) p.catch(function() { }); } catch (e) { } }
     }
+    function canFullScreen() { return !!document.documentElement.requestFullscreen && document.fullscreenEnabled !== false; }
+    function toggleFullScreen() {
+        if (isFullScreen()) { exitFullScreen(); return; }
+        if (!canFullScreen()) return;
+        try { let p = document.documentElement.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function() { }); } catch (err) { }
+    }
+    // F (no Ctrl, Cmd or Alt) does what the button does, unless F is someone's ring-in key.
+    function isFullScreenKey(e) {
+        return (e.key == 'f' || e.key == 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !isBuzz(e);
+    }
     function setupFullScreen(btn) {
         if (!btn) return;
-        let el = document.documentElement;
-        if (!el.requestFullscreen || document.fullscreenEnabled === false) { btn.style.display = 'none'; return; }
+        if (!canFullScreen()) { btn.style.display = 'none'; return; }
         function paint() {
             let on = isFullScreen();
             btn.innerHTML = on ? FS_EXIT : FS_ENTER;
-            btn.title = on ? 'Exit full screen (Esc)' : 'Full screen';
+            btn.title = on ? 'Exit full screen (F or Esc)' : 'Full screen (F)';
             btn.setAttribute('aria-label', btn.title);
             btn.classList.toggle('jp-on', on);
         }
@@ -482,8 +491,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         btn.addEventListener('click', function(e) {
             e.preventDefault();
             btn.blur();   // so Space (a buzzer key) can't press it again
-            if (isFullScreen()) { exitFullScreen(); return; }
-            try { let p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(function() { }); } catch (err) { }
+            toggleFullScreen();
         });
     }
 
@@ -979,6 +987,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             if (e.key == 'Escape') { e.preventDefault(); showPauseMenu(); }
             return; // let people type in wager / settings fields
         }
+        if (isFullScreenKey(e)) { e.preventDefault(); toggleFullScreen(); return; }   // works in the pause menu too
         if (pauseEl && e.key != 'Escape') return;
         if (e.repeat && isBuzz(e)) { e.preventDefault(); return; }
         let bi = buzzIndex(e);
@@ -1559,7 +1568,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         let panel = showPanel(
             '<h1>Play Live</h1>' + onboarding + '<div class="jp-online-slot"></div>' +
             '<div class="jp-intro">' + setupIntro() + '</div>' +
-            '<p class="jp-note">During play: click / <span class="jp-key">' + buzzKeyName() + '</span> ring in, and move on when the game is waiting · <span class="jp-key">Enter</span> submit a typed response or wager · <span class="jp-key">y</span>/<span class="jp-key">n</span> overrule a judgment (or say “I was wrong” to take back a response ruled right) · <span class="jp-key">Esc</span> or the Pause button freezes everything</p>' +
+            '<p class="jp-note">During play: click / <span class="jp-key">' + buzzKeyName() + '</span> ring in, and move on when the game is waiting · <span class="jp-key">Enter</span> submit a typed response or wager · <span class="jp-key">y</span>/<span class="jp-key">n</span> overrule a judgment (or say “I was wrong” to take back a response ruled right) · <span class="jp-key">Esc</span> or the Pause button freezes everything · <span class="jp-key">F</span> full screen on and off</p>' +
             '<h2>Settings</h2>' + settingsForm() +
             '<div class="jp-setup-actions"><button class="jp-btn jp-start">Start the game</button> <button class="jp-btn jp-secondary jp-scores">High scores</button> <button class="jp-btn jp-secondary jp-cancel">Back to the page</button></div>'
         );

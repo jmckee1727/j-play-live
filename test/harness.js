@@ -299,6 +299,15 @@ const colorWatch = new w.MutationObserver(() => {
   }
 });
 colorWatch.observe(doc.body, { childList: true, subtree: true, characterData: true });
+// The air date sits in the middle of the top bar during play, and steps aside whenever the bar shows a category or the game's title.
+let dateShown = 0, dateBad = [];
+const dateWatch = setInterval(() => {
+  const d = doc.querySelector('.jp-top .jp-date'), cat = doc.querySelector('.jp-top .jp-cat');
+  if (!d || !cat) return;
+  if (cat.textContent && !d.hidden) dateBad.push('date shown over ' + JSON.stringify(cat.textContent.slice(0, 40)));
+  if (!cat.textContent && /^(Board|Jeopardy|Double)/.test(doc.querySelector('.jp-top .jp-round').textContent) && (d.hidden || !/2026/.test(d.textContent) || !/September/.test(d.textContent) || !/18/.test(d.textContent))) dateBad.push('date missing in play: ' + JSON.stringify(d.textContent));
+  if (!d.hidden && d.textContent) dateShown++;
+}, 120);
 let lastRound = '';
 const scoreLog = setInterval(() => { const st = w.jpLiveDebug && w.jpLiveDebug.state; if (!st) return; if (st.round !== lastRound) { lastRound = st.round; console.log('round', st.round, 'scores', JSON.stringify(st.scores)); } }, 100);
 // Media clues: the contestants' money moves only as the setting allows.
@@ -319,7 +328,7 @@ const mediaWatch = setInterval(() => {
 const poll = setInterval(() => { if (doc.querySelector('.jp-again') || Date.now() - t0 > 240000) finish(); }, 200);
 
 function finish() {
-  clearInterval(poll); clearInterval(enterTimer); clearInterval(scoreLog); clearInterval(mediaWatch); mo.disconnect();
+  clearInterval(poll); clearInterval(enterTimer); clearInterval(scoreLog); clearInterval(mediaWatch); clearInterval(dateWatch); mo.disconnect();
   const st = (w.jpLiveDebug && w.jpLiveDebug.state) || { scores: {}, stats: {}, played: {}, results: [], humans: ['You'] };
   console.log('media clues played:', mediaClues, '· contestant money moved wrongly on them:', mediaMoved.length, mediaMoved.slice(0, 3));
   if (mediaMoved.length) errors.push('contestant money moved on a media clue: ' + mediaMoved.join('; '));
@@ -398,6 +407,9 @@ function finish() {
   }
   console.log('podium colors checked:', colorChecks, '· colored before the ruling:', earlyColors.length);
   if (earlyColors.length) errors.push('podium colored before the ruling: ' + earlyColors.slice(0, 3).join('; '));
+  console.log('air date in the top bar:', dateShown ? JSON.stringify(doc.querySelector('.jp-top .jp-date').textContent || '(hidden now)') + ' seen ' + dateShown + ' times' : 'never', '· problems:', dateBad.length);
+  if (!dateShown) errors.push('the air date never showed in the top bar');
+  if (dateBad.length) errors.push('air date: ' + Array.from(new Set(dateBad)).slice(0, 3).join('; '));
   console.log('ERRORS:', errors.length);
   errors.slice(0, 10).forEach(e => console.log('  ', e.split('\n').slice(0, 4).join(' | ')));
   if (!doc.querySelector('.jp-again')) console.log('DID NOT REACH THE END. stage:', (doc.querySelector('.jp-stage') || {}).textContent, '| hint:', (doc.querySelector('.jp-hint') || {}).textContent);

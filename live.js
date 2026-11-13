@@ -403,7 +403,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         root.id = 'jp_live';
         root.style.display = 'none';
         root.innerHTML =
-            '<div class="jp-top"><div class="jp-round"></div><div class="jp-cat"></div><div class="jp-val"></div>' +
+            '<div class="jp-top"><div class="jp-round"></div><div class="jp-date" hidden></div><div class="jp-cat"></div><div class="jp-val"></div>' +
             '<div class="jp-timer"><div class="jp-timer-fill"></div></div>' +
             '<button class="jp-fs-btn" type="button" title="Full screen" aria-label="Full screen"></button></div>' +
             '<div class="jp-stage"></div>' +
@@ -415,6 +415,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         U = {
             root: root,
             round: root.querySelector('.jp-round'),
+            date: root.querySelector('.jp-date'),
             cat: root.querySelector('.jp-cat'),
             val: root.querySelector('.jp-val'),
             timer: root.querySelector('.jp-timer'),
@@ -506,6 +507,17 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         U.round.textContent = String(round || '').replace(/ Round$/, '');
         U.cat.textContent = cat || '';
         U.val.textContent = val || '';
+        // The day the game aired, quietly in the middle of the bar while nothing
+        // else is there (a category or the game's title takes the space back).
+        let when = cat ? '' : airDateLabel();
+        U.date.textContent = when;
+        U.date.hidden = !when;
+    }
+    // "Friday, November 8, 2024" from the archive page's title ("Show #9187, aired 2024-11-08"); '' if it has none.
+    function airDateLabel() {
+        let m = String(document.title || '').match(/aired\s+(\d{4})-(\d{2})-(\d{2})/i);
+        if (!m) return '';
+        try { return new Date(+m[1], +m[2] - 1, +m[3], 12).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }); } catch (e) { return ''; }
     }
 
     function setHint(html) { U.hint.innerHTML = html || ''; }

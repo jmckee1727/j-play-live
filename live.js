@@ -41,6 +41,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         contestantEngine: 'neural',   // 'neural' (studio voices, when the host uses one) or 'system'
         voicePick: true,              // pick clues by voice ("Science for 600") when answering by voice
         readCategories: true,
+        intro: true,                  // the host introduces the contestants (and the returning champion) before the first round
         sfx: true,
         fjMusic: 'calm',              // Final Jeopardy! think music: 'calm' (the built-in tune, or sounds/think.*) or 'off'
         upper: true,
@@ -232,7 +233,12 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // offline multiplayer game. Every player, contestants first, then humans.
     function humans() { return (G && G.humans && G.humans.length) ? G.humans : [ YOU ]; }
     function isHuman(who) { return humans().indexOf(who) >= 0; }
-    function allPlayers() { return realNames().concat(humans()); }
+    // Podium order, left to right. The returning champion stands at the first
+    // podium: the show's (J! Archive lists the podiums left to right, champion
+    // first), or you, while you're on a win streak (G.champ, set at the start of
+    // a game); then the show's contestants in their own order sit to your right.
+    function allPlayers() { return youChampion() ? humans().concat(realNames()) : realNames().concat(humans()); }
+    function youChampion() { return !!(G && G.champ); }
     function nameOf(who) { return who == YOU ? 'you' : who; }
     // The names for a game from the settings: trimmed, unique, never a contestant's.
     function humanNames() {
@@ -1138,6 +1144,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<tr><td>Contestants speak</td><td><label><input type="checkbox" data-s="contestantVoices"' + (S.contestantVoices ? ' checked' : '') + '>Read their responses aloud in their own voices</label> ' +
               '<select data-s="contestantEngine" style="min-width:16em;margin-left:8px"><option value="neural"' + (S.contestantEngine != 'system' ? ' selected' : '') + '>studio voices (with the studio host)</option><option value="system"' + (S.contestantEngine == 'system' ? ' selected' : '') + '>system voices</option></select></td></tr>' +
             '<tr><td>Read categories</td><td><label><input type="checkbox" data-s="readCategories"' + (S.readCategories ? ' checked' : '') + '>Host reads the categories at the start of each round</label></td></tr>' +
+            '<tr><td>Introductions</td><td><label><input type="checkbox" data-s="intro"' + (S.intro !== false ? ' checked' : '') + '>Host introduces the contestants before the first round</label><div class="jp-note" style="margin-top:3px">While you\'re on a win streak (your last games won, whichever games they were), you\'re the returning champion: you take the first podium and start the game, and the show\'s champion moves over one.</div></td></tr>' +
             '<tr><td>Uppercase clues</td><td><label><input type="checkbox" data-s="upper"' + (S.upper ? ' checked' : '') + '>Show clue text in capitals, like the show</label></td></tr>' +
             '<tr><td>Sound effects</td><td><label><input type="checkbox" data-s="sfx"' + (S.sfx ? ' checked' : '') + '>On (drop files into the extension\'s <code>sounds/</code> folder to replace the built-in tones)</label></td></tr>' +
             '<tr><td>Final Jeopardy! music</td><td><select data-s="fjMusic" style="min-width:12em"><option value="calm"' + (S.fjMusic != 'off' ? ' selected' : '') + '>Calm think music</option><option value="off"' + (S.fjMusic == 'off' ? ' selected' : '') + '>Off (silent thinking time)</option></select></td></tr>' +
@@ -1761,7 +1768,82 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     // Money is written "$8,000" — both voice engines read that naturally.
 
     function isChampion(name) {
+        if (youChampion()) return name == YOU;            // you beat the champion's last opponents: the title is yours
         try { return /winnings total/i.test((contestants[name] || { }).info || ''); } catch (e) { return false; }
+    }
+    // Your win streak, from your finished games in the order you played them
+    // (any games, hopping around the archive or not): { n: wins in a row,
+    // total: the money won in them }. Games with nobody to beat neither count nor break it.
+    function yourStreak() {
+        let list = loadScores().filter(function(e) { return entryPlayer(e) == YOU; })
+                               .sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+        let n = 0, total = 0;
+        for (let i = list.length - 1; i >= 0; i--) {
+            let e = list[i], opponents = (e.contestants || [ ]).length + (e.others || [ ]).length;
+            if (!opponents && e.contestants) continue;
+            if (!e.won) break;
+            n++; total += Math.max(0, +e.score || 0);
+        }
+        return { n: n, total: total };
+    }
+    // The champion for a new game: you, when you won your last game and play
+    // alone at this keyboard (several people at one keyboard, or online, keep the show's).
+    function pickChampion() {
+        if (online() || humans().length != 1) return null;
+        let sk = yourStreak();
+        return sk.n > 0 ? sk : null;
+    }
+    // A contestant's line from J! Archive: "Jane Doe, a librarian from Austin, Texas (whose 2-day cash winnings total $40,001)".
+    function contestantBio(name) {
+        let info = '';
+        try { info = String((contestants[name] || { }).info || '').replace(/\s+/g, ' ').trim(); } catch (e) { }
+        let m = info.match(/^([^,]+),\s*(.*)$/);
+        let full = m ? m[1].trim() : name, rest = m ? m[2] : '';
+        let win = rest.match(/\(\s*whose\s+([^)]*winnings total[^)]*)\)/i);
+        let what = rest.replace(/\([^)]*\)/g, '').replace(/[\s.,;]+$/, '').trim();
+        return { full: full || name, what: what, winnings: win ? win[1].trim() : '' };
+    }
+    function dayWord(n) { return [ 'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten' ][n] || String(n); }
+    // "Today's contestants": the challengers in podium order, then the returning
+    // champion, the way the show's announcer does it. Skippable as a whole.
+    async function introduceContestants(tok) {
+        let real = realNames(), hs = humans(), lines = [ ];
+        let champ = youChampion() ? YOU : (real.find(function(n) { return isChampion(n); }) || null);
+        let challengers = real.filter(function(n) { return n != champ; });
+        for (let n of challengers) {
+            let b = contestantBio(n);
+            lines.push({ who: n, show: b.what, text: (b.what ? b.what.charAt(0).toUpperCase() + b.what.slice(1) + '... ' : '') + b.full + '.' });
+        }
+        if (!youChampion()) {
+            if (hs.length == 1) lines.push({ who: YOU, show: 'challenger', text: (real.length ? 'And joining them today... you!' : 'Our contestant today... you!') });
+            else lines.push({ who: hs[0], show: 'at the keyboard', text: (real.length ? 'And joining them at the keyboard: ' : 'Our players today: ') + joinNatural(hs) + '.', all: hs });
+        }
+        if (champ == YOU) {
+            let c = G.champ;
+            lines.push({ who: YOU, show: dayWord(c.n) + '-day champion, ' + money(c.total),
+                         text: (lines.length ? 'And our returning champion, ' : 'Our returning champion, ') + 'whose ' + c.n + '-day cash winnings total ' + money(c.total) + '... you!' });
+        } else if (champ) {
+            let b = contestantBio(champ);
+            lines.push({ who: champ, show: 'returning champion' + (b.what ? ', ' + b.what : ''),
+                         text: 'And our returning champion, ' + (b.what ? b.what + (b.winnings ? ', whose ' + b.winnings : '') : (b.winnings ? 'whose ' + b.winnings : '')) + '... ' + b.full + '!' });
+        }
+        if (!lines.length) return;
+        setHeader('Jeopardy!', 'Meet today\'s contestants', '');
+        setHint('Click or press ' + anyKeyHtml() + ' to skip.');
+        let r = await hostSaySkippable('This is Jeopardy! Let\'s meet today\'s contestants.', tok);
+        if (!alive(tok)) return;
+        for (let ln of lines) {
+            if (r.skipped) break;
+            (ln.all || [ ln.who ]).forEach(function(w) { podiumLine(w, esc(ln.show)); });
+            lightPodium(ln.who);
+            if (ln.all) U.podiums.querySelectorAll('.jp-podium').forEach(function(p) { if (ln.all.indexOf(p.dataset.who) >= 0) p.classList.add('jp-lit'); });
+            r = await hostSaySkippable(ln.text, tok);
+            if (!alive(tok)) return;
+            if (!r.skipped) { await sleep(250, tok); if (!alive(tok)) return; }
+        }
+        lightPodium(null);
+        clearPodiumLines();
+        setHint('');
     }
     function heShe(who) { return who == YOU ? 'you' : isHuman(who) ? who : (guessGender(who) == 'f' ? 'she' : 'he'); }
     function himHer(who) { return who == YOU ? 'you' : isHuman(who) ? who : (guessGender(who) == 'f' ? 'her' : 'him'); }
@@ -1803,7 +1885,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     function roundOpeningLine(round) {
         let who = G.control;
         if (round == 'J') {
-            if (who == YOU) return 'You start us off. Pick a clue.';
+            if (who == YOU) return youChampion() ? 'As our returning champion, you start us off. Pick a clue.' : 'You start us off. Pick a clue.';
             return isChampion(who) ? who + ', as our returning champion, you start us off.' : who + ', you start us off.';
         }
         // Double Jeopardy!: the standings, then the trailing player picks first.
@@ -1846,11 +1928,16 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         G.stats = { buzzWins: 0, buzzLost: 0, lockouts: 0, answered: 0, correct: 0, wrong: 0, clues: 0 };
         G.winCue = false;
         if (online()) Object.assign(G.online, { votes: { }, scoresSeq: 0, clueSeq: 0, interludeSeq: 0, calls: [ ], calledVids: { }, lastClueNum: null, pausePending: false, lastCall: false, interlude: null });
-        // The returning champion (leftmost podium on J! Archive) picks first; with no contestants, the first human.
-        G.control = realNames()[0] || humans()[0];
+        // The returning champion picks first: you, on a win streak (first podium);
+        // else the show's (leftmost podium on J! Archive); with no contestants, the first human.
+        G.champ = pickChampion();
+        G.control = G.champ ? YOU : (realNames()[0] || humans()[0]);
+        G.scores = { };
+        for (let n of allPlayers()) G.scores[n] = 0;
         renderPodiums();
         G.round = 'J';
         applyMicHold();                                   // "on for the whole game": open now, close at the end
+        if (S.intro !== false && !online()) { await introduceContestants(tok); if (!alive(tok)) return; }
         await runGame(tok, 'J', false);
     }
 

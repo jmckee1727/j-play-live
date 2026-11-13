@@ -5,7 +5,9 @@
 // contestants), SWEEP=1 (always right, picks in order: runs categories; the success cues
 // must fire), EDIT=1 (edit results from the pause menu), CASCADE=1 (mark a miss right:
 // the contestants who followed give their money back), CONTROL=1 (control follows a
-// "y" during the pick), CONCEDE=1 ("Mark me wrong" during the pick), REWIND=1, REWINDFJ=1, PAUSE=1, MEDIA=none|half|full.
+// "y" during the pick), CONCEDE=1 ("Mark me wrong" during the pick), REWIND=1, REWINDFJ=1, PAUSE=1, MEDIA=none|half|full,
+// CHAMP=1 (you won your last two games, other games: you're the returning champion at the first
+// podium), NOINTRO=1 (no contestant introductions).
 // Needs test/fixtures/game9537.html (test/fetch_fixture.sh).
 const { JSDOM, VirtualConsole } = require('jsdom');
 const fs = require('fs');
@@ -54,7 +56,14 @@ w.localStorage.setItem('jpLiveSettings', JSON.stringify({
   voiceEngine: 'system', earEngine: 'chrome', readCategories: false, sfx: true, contestantVoices: false, micMode: 'always', answerMode: 'speech', difficulty: 'custom', customMedian: 700, customSpread: 0.4,
   answerSeconds: 2, buzzWindowSeconds: 1.2, lockoutMs: 150, ddAnswerSeconds: 2, fjSeconds: 2, autoAdvanceMs: 120, mediaCredit: process.env.MEDIA || 'none', settingsVersion: 6, onboardedVoice: true, voicePick: false,
   playerCount: MULTI || 1, players: [ { name: 'Ann', key: ' ' }, { name: 'Bob', key: 'a' }, { name: 'Cy', key: 'l' } ], mousePlayer: MULTI ? 1 : 0, contestantsOn: !process.env.NOCONT,
+  intro: !process.env.NOINTRO,
 }));
+// CHAMP: a lost game, then two won games elsewhere in the archive (played in that order): a 2-day champion with $33,000.
+if (process.env.CHAMP) w.localStorage.setItem('jpLiveScores', JSON.stringify([
+  { seed: 1, id: 's1', date: '2026-11-01T20:00:00.000Z', game: 'Show #9001', gameId: '9100', score: 4000, won: false, contestants: [ { name: 'A', score: 9000 } ], others: [ ] },
+  { seed: 1, id: 's2', date: '2026-11-02T20:00:00.000Z', game: 'Show #8000', gameId: '8000', score: 21000, won: true, contestants: [ { name: 'B', score: 9000 } ], others: [ ] },
+  { seed: 1, id: 's3', date: '2026-11-03T20:00:00.000Z', game: 'Show #9300', gameId: '9300', score: 12000, won: true, contestants: [ { name: 'C', score: 9000 } ], others: [ ] },
+]));
 w.addEventListener('error', e => errors.push('window.error: ' + (e.error && e.error.stack || e.message)));
 process.on('unhandledRejection', r => errors.push('unhandledRejection: ' + (r && r.stack || r)));
 
@@ -319,7 +328,24 @@ function finish() {
   console.log('clues played:', Object.keys(st.played).length, 'round:', st.round);
   console.log('bot:', JSON.stringify(stats), 'utterances:', spoken.length, 'recognizer starts:', srStarts);
   console.log('final panel:', (doc.querySelector('.jp-panel') || { textContent: '' }).textContent.replace(/\s+/g, ' ').slice(0, 240));
-  const saved = JSON.parse(w.localStorage.getItem('jpLiveScores') || '[]');
+  const saved = JSON.parse(w.localStorage.getItem('jpLiveScores') || '[]').filter(e => !e.seed);
+  // The contestant introductions, the seating and who starts.
+  const seats = [...doc.querySelectorAll('.jp-podium')].map(p => p.dataset.who);
+  const iMeet = spoken.findIndex(t => /meet today's contestants/i.test(t));
+  const iOpen = spoken.findIndex(t => /start us off/i.test(t));
+  console.log('seats:', seats.join(' | '));
+  console.log('intro:', iMeet < 0 ? '(none)' : JSON.stringify(spoken.slice(iMeet, iOpen > iMeet ? iOpen : iMeet + 6)));
+  console.log('opening:', iOpen < 0 ? '(none)' : spoken[iOpen]);
+  if (process.env.NOINTRO ? iMeet >= 0 : (iMeet < 0 && !MULTI && !process.env.NOCONT)) errors.push('introductions ' + (process.env.NOINTRO ? 'played though switched off' : 'missing'));
+  if (process.env.CHAMP && !MULTI) {   // several people at one keyboard keep the show's champion
+    if (seats[0] != 'You' || (!process.env.NOCONT && seats[1] != 'Mark')) errors.push('champion seating: ' + seats.join(','));
+    if (!/returning champion, you start/i.test(spoken[iOpen] || '')) errors.push('the champion (you) did not start: ' + spoken[iOpen]);
+    if (!process.env.NOINTRO && !spoken.some(t => /returning champion, whose 2-day cash winnings total \$33,000/.test(t))) errors.push('no champion introduction for you');
+    if (!process.env.NOINTRO && spoken.some(t => /whose 1-day cash winnings/.test(t))) errors.push("the show's champion was introduced as champion");
+  } else if (!MULTI && !process.env.NOCONT) {
+    if (seats[0] != 'Mark' || seats[seats.length - 1] != 'You') errors.push('seating: ' + seats.join(','));
+    if (!process.env.NOINTRO && !spoken.some(t => /returning champion, an executive communications lead from Northglenn, Colorado, whose 1-day cash winnings total \$20,800\.\.\. Mark Ramirez/.test(t))) errors.push("no champion introduction for the show's champion");
+  }
   const humans = st.humans || ['You'];
   console.log('saved entries:', saved.length, saved.map(e => (e.player || 'You') + ' $' + e.score + (e.won ? ' won' : '') + ' coryat ' + e.coryat + ' ' + e.correct + '/' + e.answered).join(' | '));
   if (saved.length != humans.length) errors.push('expected ' + humans.length + ' saved entries, got ' + saved.length);

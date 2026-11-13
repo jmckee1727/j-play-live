@@ -285,8 +285,13 @@ The game ships with small synthesized tones so it works out of the box. Drop fil
 `sounds/` to replace them (mp3, wav, ogg or m4a), named:
 
 `boardfill`, `select`, `lights`, `buzz`, `lockout`, `timeout`, `right`, `wrong`, `dd`, `fj`,
-`think` (the Final Jeopardy! track; without a file, an original calm built-in tune plays, timed to the
-Final Jeopardy! clock; set **Final Jeopardy! music** to Off in Settings for silent thinking time), `roundend`,
+`think` (the Final Jeopardy! track; without a file, one of four original built-in tunes plays, timed to
+the Final Jeopardy! clock: pick it next to **Final Jeopardy! music** in Settings, where **Hear it** plays
+the first few seconds. *Bright marimba* (the default) is a light, bouncy tune on a soft marimba with a
+walking bass; *Quiet suspense* is a dark string pad, a slow heartbeat and a celesta that fills in as
+time runs down; *Music box waltz* is a gentle 3/4 tune on a music box; *Calm jazz piano* is 0.14.2's
+electric piano piece. All four are written for J-Play Live and synthesized in the browser, no recordings.
+Set the music to Off for silent thinking time), `roundend`,
 and the success cues: `sweep` (you ran the category — all five clues right), `ddright` (your Daily
 Double was right), `fjright` (your Final Jeopardy! response was right), `win` (you won the game: a
 short original fanfare). Nothing plays for a loss.

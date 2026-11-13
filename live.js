@@ -43,7 +43,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         readCategories: true,
         intro: true,                  // the host introduces the contestants (and the returning champion) before the first round
         sfx: true,
-        fjMusic: 'calm',              // Final Jeopardy! think music: 'calm' (the built-in tune, or sounds/think.*) or 'off'
+        fjMusic: 'calm',              // Final Jeopardy! think music: 'calm' (on: the tune below, or sounds/think.*) or 'off'
+        fjTune: 'marimba',            // which built-in think tune: 'marimba' (default), 'suspense', 'musicbox' or 'calm' (0.14.2's jazz piano)
         upper: true,
         answerSeconds: 5,
         buzzWindowSeconds: 5,
@@ -139,6 +140,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
     }
 
     function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    // The built-in Final Jeopardy! think tune chosen in Settings (an unknown or missing one: the default).
+    function fjTune() { return JPAudio.thinkTunes.some(function(t) { return t.id == S.fjTune; }) ? S.fjTune : JPAudio.thinkDefault; }
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1168,7 +1172,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<tr><td>Introductions</td><td><label><input type="checkbox" data-s="intro"' + (S.intro !== false ? ' checked' : '') + '>Host introduces the contestants before the first round</label><div class="jp-note" style="margin-top:3px">While you\'re on a win streak (your last games won, whichever games they were), you\'re the returning champion: you take the first podium and start the game, and the show\'s champion moves over one.</div></td></tr>' +
             '<tr><td>Uppercase clues</td><td><label><input type="checkbox" data-s="upper"' + (S.upper ? ' checked' : '') + '>Show clue text in capitals, like the show</label></td></tr>' +
             '<tr><td>Sound effects</td><td><label><input type="checkbox" data-s="sfx"' + (S.sfx ? ' checked' : '') + '>On (drop files into the extension\'s <code>sounds/</code> folder to replace the built-in tones)</label></td></tr>' +
-            '<tr><td>Final Jeopardy! music</td><td><select data-s="fjMusic" style="min-width:12em"><option value="calm"' + (S.fjMusic != 'off' ? ' selected' : '') + '>Calm think music</option><option value="off"' + (S.fjMusic == 'off' ? ' selected' : '') + '>Off (silent thinking time)</option></select></td></tr>' +
+            '<tr><td>Final Jeopardy! music</td><td><select data-s="fjMusic" style="min-width:12em"><option value="calm"' + (S.fjMusic != 'off' ? ' selected' : '') + '>Think music on</option><option value="off"' + (S.fjMusic == 'off' ? ' selected' : '') + '>Off (silent thinking time)</option></select> ' +
+              '<select data-s="fjTune" class="jp-fj-tune" style="min-width:12em;margin-left:8px"' + (S.fjMusic == 'off' ? ' disabled' : '') + '>' +
+              JPAudio.thinkTunes.map(function(t) { return '<option value="' + t.id + '"' + (fjTune() == t.id ? ' selected' : '') + '>' + esc(t.name) + (t.id == JPAudio.thinkDefault ? ' (default)' : '') + '</option>'; }).join('') + '</select> ' +
+              '<button type="button" class="jp-fj-hear" style="margin-left:6px">&#9654; Hear it</button></td></tr>' +
             '<tr><td>Playback</td><td><select class="jp-out-device" style="max-width:100%"><option value="default">System default</option></select>' +
               '<span class="jp-out-device-note jp-note" style="margin-left:8px">the studio voice, effects and music (a system voice always follows the system default)</span></td></tr>' +
             (roomRows ? '' : '<tr><td>Time to answer</td><td><input type="number" data-s="answerSeconds" min="2" max="15" value="' + (+S.answerSeconds) + '" style="min-width:5em;width:5em"> s after buzzing &nbsp; ' +
@@ -1527,6 +1534,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         }
 
         bindPlayers(panel);
+        let hear = panel.querySelector('.jp-fj-hear');
+        if (hear) hear.onclick = function() { JPAudio.previewThink(fjTune()); };
         panel.querySelectorAll('[data-s]').forEach(function(inp) {
             let key = inp.dataset.s;
             if (inp.closest('.jp-players-wrap')) return;
@@ -1536,7 +1545,9 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 else S[key] = inp.value;
 
                 if (key == 'sfx') JPAudio.setEnabled(S.sfx);
-                if (key == 'fjMusic' && S.fjMusic == 'off') JPAudio.stopLoop();
+                if (key == 'fjMusic' && S.fjMusic == 'off') { JPAudio.stopLoop(); JPAudio.stopPreview(); }
+                if (key == 'fjMusic') { let t = panel.querySelector('.jp-fj-tune'); if (t) t.disabled = S.fjMusic == 'off'; }
+                if (key == 'fjTune') JPAudio.stopPreview();
                 if (key == 'hostVoice' || key == 'neuralVoice') setupVoices();
                 if (key == 'earSize') refreshEarUI(panel);
                 if (key == 'micMode') { S.answerMode = S.micMode == 'off' ? 'typed' : 'speech'; applyMicHold(); }
@@ -3071,7 +3082,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await say('You have ' + S.fjSeconds + ' seconds. Good luck.', tok);   // before the music, so the mic doesn't hear it
         if (!alive(tok)) return;
 
-        if (S.fjMusic != 'off') JPAudio.startLoop('think', { seconds: S.fjSeconds });
+        if (S.fjMusic != 'off') JPAudio.startLoop('think', { seconds: S.fjSeconds, tune: fjTune() });
         if (online()) {
             // Everyone responds at once, on their own machine; the responses come over the channel and are judged alike everywhere.
             let me = G.online.me;

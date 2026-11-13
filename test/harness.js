@@ -58,6 +58,7 @@ w.localStorage.setItem('jpLiveSettings', JSON.stringify({
   answerSeconds: 2, buzzWindowSeconds: 1.2, lockoutMs: 150, ddAnswerSeconds: 2, fjSeconds: 2, autoAdvanceMs: 120, mediaCredit: process.env.MEDIA || 'none', settingsVersion: 6, onboardedVoice: true, voicePick: false,
   playerCount: MULTI || 1, players: [ { name: 'Ann', key: ' ' }, { name: 'Bob', key: 'a' }, { name: 'Cy', key: 'l' } ], mousePlayer: MULTI ? 1 : 0, contestantsOn: !process.env.NOCONT,
   intro: !process.env.NOINTRO,
+  ...(process.env.FJTUNE ? { fjTune: process.env.FJTUNE } : { }), ...(process.env.FJOFF ? { fjMusic: 'off' } : { }),
 }));
 // CHAMP: a lost game, then two won games elsewhere in the archive (played in that order): a 2-day champion with $33,000.
 if (process.env.CHAMP) w.localStorage.setItem('jpLiveScores', JSON.stringify([
@@ -75,6 +76,9 @@ for (const f of ['played.js', 'archive.js', 'clock.js', 'audio.js', 'judge.js', 
 }
 const cues = {};
 { const orig = w.JPAudio.play; w.JPAudio.play = function(name) { cues[name] = (cues[name] || 0) + 1; return orig.apply(this, arguments); }; }
+// Final Jeopardy! think music: which built-in tune was asked for (FJTUNE=..., FJOFF=1 for music off).
+const loops = [];
+{ const orig = w.JPAudio.startLoop; w.JPAudio.startLoop = function(name, opts) { loops.push([name, opts && opts.tune]); return orig.apply(this, arguments); }; }
 
 // ---- the bot -------------------------------------------------------------------
 const stats = { picks: 0, buzzes: 0, wagers: 0, enters: 0, answersHeard: 0 };
@@ -410,6 +414,31 @@ function finish() {
   console.log('air date in the top bar:', dateShown ? JSON.stringify(doc.querySelector('.jp-top .jp-date').textContent || '(hidden now)') + ' seen ' + dateShown + ' times' : 'never', '· problems:', dateBad.length);
   if (!dateShown) errors.push('the air date never showed in the top bar');
   if (dateBad.length) errors.push('air date: ' + Array.from(new Set(dateBad)).slice(0, 3).join('; '));
+  {
+    const think = loops.filter(l => l[0] == 'think'), want = process.env.FJTUNE && w.JPAudio.thinkTunes.some(t => t.id == process.env.FJTUNE) ? process.env.FJTUNE : 'marimba';
+    console.log('think music:', process.env.FJOFF ? 'off' : want, '· asked for', JSON.stringify(think));
+    if (process.env.FJOFF) { if (think.length) errors.push('think music started although Final Jeopardy! music is off'); }
+    else if (think.length != 1 || think[0][1] != want) errors.push('think music: ' + JSON.stringify(think) + ', expected one ' + want);
+    // Settings: the tune menu sits next to on/off, lists the four tunes with the right one picked, and a change is saved.
+    const sb = doc.querySelector('.jp-settings-btn');
+    if (sb) {
+      sb.click();
+      const sel = doc.querySelector('select[data-s="fjTune"]'), onoff = doc.querySelector('select[data-s="fjMusic"]');
+      if (!sel || !onoff) errors.push('settings: no think tune menu (' + !!sel + ') or on/off (' + !!onoff + ')');
+      else {
+        if (sel.closest('tr') !== onoff.closest('tr')) errors.push('settings: the tune menu is not next to the music on/off');
+        const ids = Array.from(sel.options).map(o => o.value).join(',');
+        if (ids != 'marimba,suspense,musicbox,calm') errors.push('settings: tune options ' + ids);
+        if (sel.value != want) errors.push('settings: tune shows ' + sel.value + ', expected ' + want);
+        if (sel.disabled != !!process.env.FJOFF) errors.push('settings: tune menu disabled=' + sel.disabled + ' with music ' + (process.env.FJOFF ? 'off' : 'on'));
+        if (!doc.querySelector('.jp-fj-hear')) errors.push('settings: no Hear it button');
+        sel.value = 'musicbox'; sel.dispatchEvent(new w.Event('change'));
+        const saved = JSON.parse(w.localStorage.getItem('jpLiveSettings') || '{}');
+        if (saved.fjTune != 'musicbox') errors.push('settings: tune change not saved (' + saved.fjTune + ')');
+        else console.log('settings: tune menu ok, change saved');
+      }
+    } else console.log('settings: no Settings button on this screen (menu not checked)');
+  }
   console.log('ERRORS:', errors.length);
   errors.slice(0, 10).forEach(e => console.log('  ', e.split('\n').slice(0, 4).join(' | ')));
   if (!doc.querySelector('.jp-again')) console.log('DID NOT REACH THE END. stage:', (doc.querySelector('.jp-stage') || {}).textContent, '| hint:', (doc.querySelector('.jp-hint') || {}).textContent);

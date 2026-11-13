@@ -460,20 +460,40 @@ var JPAudio = (function() {
 
     // ----------------------------------------------------------- music
 
-    // An original tune for the Final Jeopardy! think time, played when there is
+    // Original tunes for the Final Jeopardy! think time, played when there is
     // no sounds/think.* file. (The show's own music is Sony's and isn't
-    // bundled; drop your own file in to replace this.)
+    // bundled; drop your own file in to replace these.) All four are written
+    // for this extension and synthesized here with Web Audio, so no recording
+    // or sample is involved.
     //
-    // 0.14.2 (John, Nov 13: the old one was "super annoying"): a calm, jazzy
-    // piece in F: a soft electric piano melody in the middle of the range, gentle
-    // chords on the beat and the "and" of two, a plucked bass, and a quiet
-    // tick-tock only in the last two bars, so the clock shows up when time is
-    // nearly out instead of ticking the whole way. Everything goes through a
-    // warm low-pass, so nothing is shrill. 12 bars of 4/4: at the default 30
-    // seconds that is 96 bpm, and the tempo follows the Final Jeopardy! time
-    // setting so the last note lands as time runs out.
+    // Each tune is 48 beats long. The tempo follows the Final Jeopardy! time
+    // setting so the last note lands as time runs out: 96 bpm at the default
+    // 30 seconds. Everything goes through a warm low-pass, so nothing is shrill.
+    //
+    //   marimba   Bright marimba (the default since 0.14.3): a light, bouncy
+    //             tune in G on a soft marimba, a plucked bass walking on the
+    //             beat, gentle chords on 2 and 4, a soft tick-tock in the last
+    //             two bars.
+    //   suspense  Quiet suspense: A minor, a dark low string pad, a slow
+    //             heartbeat, and a celesta arpeggio that starts sparse and
+    //             fills in; the heartbeat quickens over the last bars.
+    //   musicbox  Music box waltz: a gentle 3/4 tune in D on a music box, with
+    //             a soft oom-pah-pah underneath.
+    //   calm      Calm jazz piano (0.14.2's tune; John, Nov 13: the one before
+    //             it was "super annoying"): a jazzy electric piano piece in F
+    //             with a plucked bass and a soft echo.
     const THINK_BEATS = 48;
-    const THINK_MELODY = [                    // [MIDI note or null for a rest, beats], bar by bar
+    const THINK_DEFAULT = 'marimba';
+    const THINK_TUNES = [
+        { id: 'marimba',  name: 'Bright marimba' },
+        { id: 'suspense', name: 'Quiet suspense' },
+        { id: 'musicbox', name: 'Music box waltz' },
+        { id: 'calm',     name: 'Calm jazz piano' },
+    ];
+    function thinkTune(id) { return THINK_TUNES.some(function(t) { return t.id == id; }) ? id : THINK_DEFAULT; }
+
+    // ---- calm: [MIDI note or null for a rest, beats], bar by bar
+    const CALM_MELODY = [
         [69, 1.5], [72, 0.5], [69, 1], [65, 1],          // Fmaj7
         [65, 1.5], [69, 0.5], [74, 2],                   // Dm7
         [74, 1], [72, 0.5], [70, 0.5], [67, 2],          // Gm7
@@ -487,7 +507,7 @@ var JPAudio = (function() {
         [74, 1], [72, 1], [70, 1], [67, 1],              // Gm7 | C9
         [69, 0.5], [72, 0.5], [77, 3],                   // F6 (the last note rings)
     ];
-    const THINK_CHORDS = [                    // [chord notes, bass root, bass fifth, beats]
+    const CALM_CHORDS = [                     // [chord notes, bass root, bass fifth, beats]
         [ [53, 57, 60, 64], 41, 48, 4 ],     // Fmaj7
         [ [53, 57, 60, 62], 38, 45, 4 ],     // Dm7
         [ [55, 58, 62, 65], 43, 50, 4 ],     // Gm7
@@ -501,6 +521,79 @@ var JPAudio = (function() {
         [ [55, 58, 62, 65], 43, 43, 2 ],     // Gm7
         [ [52, 55, 58, 62], 36, 36, 2 ],     // C9
         [ [53, 57, 60, 62], 41, 41, 4 ],     // F6
+    ];
+
+    // ---- marimba: G major, 12 bars of 4/4
+    const MARIMBA_MELODY = [
+        [74, .5], [79, .5], [78, .5], [79, .5], [74, 1], [71, 1],     // G
+        [76, .5], [79, .5], [78, .5], [76, .5], [71, 2],              // Em
+        [72, .5], [76, .5], [79, .5], [76, .5], [81, 1], [79, 1],     // C
+        [78, .5], [76, .5], [74, .5], [76, .5], [78, 1], [null, 1],   // D
+        [74, .5], [79, .5], [78, .5], [79, .5], [83, 1], [81, 1],     // G
+        [79, .5], [78, .5], [76, .5], [78, .5], [79, 1], [71, 1],     // Em
+        [72, .5], [76, .5], [81, .5], [79, .5], [76, 1], [72, 1],     // Am
+        [74, .5], [78, .5], [81, .5], [84, .5], [83, 1], [81, 1],     // D7
+        [79, 1], [76, .5], [79, .5], [84, 1], [79, 1],                // C
+        [78, 1], [74, .5], [78, .5], [83, 1], [78, 1],                // Bm
+        [76, .5], [81, .5], [79, .5], [76, .5], [78, .5], [81, .5], [74, .5], [78, .5],   // Am | D
+        [79, .5], [74, .5], [71, .5], [74, .5], [79, 2],              // G (the last note rings)
+    ];
+    const MARIMBA_CHORDS = [                  // [chord notes, bass root, bass fifth, beats]
+        [ [55, 59, 62], 43, 50, 4 ],         // G
+        [ [52, 55, 59], 40, 47, 4 ],         // Em
+        [ [52, 55, 60], 48, 43, 4 ],         // C
+        [ [54, 57, 62], 38, 45, 4 ],         // D
+        [ [55, 59, 62], 43, 50, 4 ],         // G
+        [ [52, 55, 59], 40, 47, 4 ],         // Em
+        [ [52, 57, 60], 45, 40, 4 ],         // Am
+        [ [54, 57, 60], 38, 45, 4 ],         // D7
+        [ [52, 55, 60], 48, 43, 4 ],         // C
+        [ [54, 59, 62], 47, 42, 4 ],         // Bm
+        [ [52, 57, 60], 45, 45, 2 ],         // Am
+        [ [54, 57, 62], 38, 38, 2 ],         // D
+        [ [55, 59, 62, 67], 43, 43, 4 ],     // G
+    ];
+
+    // ---- suspense: A minor, 12 bars of 4/4. [pad chord, heartbeat root, arpeggio (one note per step), step in beats]
+    const SUSPENSE_BARS = [
+        [ [57, 60, 64], 45, [69, 72, 76, 72], 1 ],                          // Am (sparse: quarter notes)
+        [ [57, 60, 64], 45, [69, 76, 74, 72], 1 ],                          // Am
+        [ [57, 60, 65], 41, [65, 69, 72, 69], 1 ],                          // F
+        [ [57, 60, 65], 41, [65, 72, 71, 69], 1 ],                          // F (the B natural: a little mystery)
+        [ [57, 62, 65], 38, [74, 77, 81, 77, 74, 77, 81, 77], .5 ],         // Dm (fills in: eighths)
+        [ [57, 62, 65], 38, [74, 77, 81, 77, 76, 77, 74, 77], .5 ],         // Dm
+        [ [56, 59, 64], 40, [76, 80, 83, 80, 76, 80, 83, 80], .5 ],         // E
+        [ [56, 59, 64], 40, [76, 80, 83, 80, 77, 76, 74, 71], .5 ],         // E
+        [ [57, 60, 64], 45, [69, 72, 76, 81, 84, 81, 76, 72], .5 ],         // Am
+        [ [57, 60, 65], 41, [65, 69, 72, 77, 81, 77, 72, 69], .5 ],         // F
+        [ [57, 62, 65, 64, 59, 56], 38, [74, 77, 81, 77, 76, 80, 83, 88], .5, 40 ],   // Dm | E
+        [ [57, 60, 64, 69], 45, [81], 4 ],                                  // Am (rings)
+    ];
+
+    // ---- musicbox: D major, 16 bars of 3/4
+    const MUSICBOX_MELODY = [
+        [78, 2], [81, 1],                    // D
+        [86, 2], [85, .5], [83, .5],         // D
+        [83, 2], [79, 1],                    // G
+        [81, 3],                             // D
+        [78, 2], [83, 1],                    // Bm
+        [79, 1.5], [78, .5], [76, 1],        // Em
+        [76, 1], [79, 1], [85, 1],           // A7
+        [83, 2], [81, 1],                    // A7
+        [78, 2], [81, 1],                    // D
+        [84, 2], [83, .5], [81, .5],         // D7
+        [83, 2], [86, 1],                    // G
+        [82, 2], [79, 1],                    // Gm
+        [78, 1.5], [81, .5], [86, 1],        // D/A
+        [85, 1], [76, 1], [79, 1],           // A7
+        [78, 3],                             // D
+        [74, 3],                             // D (rings)
+    ];
+    const MUSICBOX_CHORDS = [                 // [chord notes, bass], one bar of 3/4 each
+        [ [62, 66, 69], 50 ], [ [62, 66, 69], 50 ], [ [59, 62, 67], 43 ], [ [62, 66, 69], 50 ],
+        [ [59, 62, 66], 47 ], [ [59, 64, 67], 40 ], [ [61, 64, 67], 45 ], [ [61, 64, 67], 45 ],
+        [ [62, 66, 69], 50 ], [ [60, 62, 66], 50 ], [ [59, 62, 67], 43 ], [ [58, 62, 67], 43 ],
+        [ [62, 66, 69], 45 ], [ [61, 64, 67], 45 ], [ [62, 66, 69], 50 ], [ [62, 66, 69, 74], 38 ],
     ];
     function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
@@ -544,79 +637,223 @@ var JPAudio = (function() {
         o2.connect(h);
         [o1, o2].forEach(function(o) { o.start(t0); o.stop(t0 + dur + 0.05); oscs.push(o); });
     }
+    // A struck note that only decays (marimba, celesta, music box): a sine plus
+    // one overtone (`ratio` times the pitch) that dies away within `ring` seconds.
+    function bellNote(dest, freq, t0, dur, peak, oscs, ratio, level, ring) {
+        let c = ctx;
+        let g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        g.connect(dest);
+        let o1 = c.createOscillator();
+        o1.type = 'sine';
+        o1.frequency.setValueAtTime(freq, t0);
+        o1.connect(g);
+        let h = c.createGain();
+        h.gain.setValueAtTime(0.0001, t0);
+        h.gain.exponentialRampToValueAtTime(level, t0 + 0.004);
+        h.gain.exponentialRampToValueAtTime(0.0001, t0 + ring);
+        h.connect(g);
+        let o2 = c.createOscillator();
+        o2.type = 'sine';
+        o2.frequency.setValueAtTime(freq * ratio, t0);
+        o2.connect(h);
+        [o1, o2].forEach(function(o) { o.start(t0); o.stop(t0 + dur + 0.05); oscs.push(o); });
+    }
+    // A soft string pad: two slightly detuned saws per note, slow in and out,
+    // through a dark low-pass.
+    function padChord(dest, notes, t0, dur, peak, oscs) {
+        let c = ctx;
+        let lp = c.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(750, t0);
+        lp.Q.setValueAtTime(0.6, t0);
+        lp.connect(dest);
+        let g = c.createGain();
+        let fade = Math.min(0.45, dur / 4);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + fade);
+        g.gain.setValueAtTime(peak, t0 + dur - fade);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        g.connect(lp);
+        notes.forEach(function(m) {
+            [-6, 6].forEach(function(cents) {
+                let o = c.createOscillator();
+                o.type = 'sawtooth';
+                o.frequency.setValueAtTime(midiHz(m), t0);
+                o.detune.setValueAtTime(cents, t0);
+                o.connect(g);
+                o.start(t0); o.stop(t0 + dur + 0.05); oscs.push(o);
+            });
+        });
+    }
+    // A heartbeat thump: a low sine that drops in pitch as it fades.
+    function thump(dest, freq, t0, peak, oscs) {
+        let c = ctx;
+        let o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq * 1.6, t0);
+        o.frequency.exponentialRampToValueAtTime(freq, t0 + 0.07);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.32);
+        o.connect(g).connect(dest);
+        o.start(t0); o.stop(t0 + 0.4); oscs.push(o);
+    }
+    // A soft tick-tock over the last two bars: time is almost up.
+    function tickTock(dest, t0, beat, oscs, peak) {
+        for (let i = THINK_BEATS - 8; i < THINK_BEATS - 1; i++)
+            oscs.push(note(dest, i % 2 ? 620 : 820, t0 + i * beat, 0.04, 'sine', peak, 0.004, 0.03));
+    }
+    // Plays [note, beats] pairs through `play(freq, start, len, isLast)`; returns the end time.
+    function melody(list, t0, beat, play) {
+        let at = 0;
+        list.forEach(function(n, i) {
+            let len = n[1] * beat;
+            if (n[0] != null) play(midiHz(n[0]), t0 + at, len, i == list.length - 1);
+            at += len;
+        });
+        return t0 + at;
+    }
 
-    // Plays the tune into c (an AudioContext, or an OfflineAudioContext for the
-    // tests) for `seconds`; returns { master, oscs, end } without starting any
-    // stop logic.
-    function scheduleThink(c, seconds, t0) {
+    // Each tune's parts, scheduled from t0 into `bus` (straight to the warm
+    // low-pass) and `lead` (the same, plus the soft echo). Returns the end time.
+    const THINK_BUILD = {
+        calm: function(bus, lead, t0, beat, oscs) {
+            let end = melody(CALM_MELODY, t0, beat, function(f, t, len, last) {
+                epNote(lead, f, t, last ? len + 1.2 : Math.max(len * 1.1, 0.35), last ? 0.13 : 0.15, oscs);
+            });
+            // Chords (on 1 and the "and" of 2) and a plucked bass (root on 1, fifth on 3)
+            let bt = 0;
+            CALM_CHORDS.forEach(function(ch, b) {
+                let start = t0 + bt * beat, len = ch[3] * beat, final = b == CALM_CHORDS.length - 1;
+                let hits = final ? [ [0, len + 1.4] ] : ch[3] >= 4 ? [ [0, 1.5 * beat], [1.5 * beat, 2.3 * beat] ] : [ [0, 0.9 * beat], [beat, 0.9 * beat] ];
+                hits.forEach(function(hit) {
+                    ch[0].forEach(function(m) { epNote(bus, midiHz(m), start + hit[0], hit[1], 0.035, oscs); });
+                });
+                oscs.push(note(bus, midiHz(ch[1]), start, final ? len + 1.2 : Math.min(len, 2 * beat) * 0.9, 'sine', 0.16, 0.012, 0.25));
+                if (!final) oscs.push(note(bus, midiHz(ch[2]), start + Math.min(len, 2 * beat), Math.min(len, 2 * beat) * 0.85, 'sine', 0.12, 0.012, 0.2));
+                bt += ch[3];
+            });
+            tickTock(bus, t0, beat, oscs, 0.035);
+            return end;
+        },
+        marimba: function(bus, lead, t0, beat, oscs) {
+            // The marimba: a short wooden ring, its overtone two octaves up (as on the real bars).
+            let end = melody(MARIMBA_MELODY, t0, beat, function(f, t, len, last) {
+                bellNote(lead, f, t, last ? 2.2 : Math.max(0.45, Math.min(0.9, len * 1.6)), 0.2, oscs, 4, 0.22, 0.05);
+            });
+            let bt = 0;
+            MARIMBA_CHORDS.forEach(function(ch, b) {
+                let start = t0 + bt * beat, final = b == MARIMBA_CHORDS.length - 1;
+                if (final) {
+                    ch[0].forEach(function(m) { bellNote(bus, midiHz(m), start, 2.4, 0.05, oscs, 4, 0.15, 0.05); });
+                    oscs.push(note(bus, midiHz(ch[1]), start, 2.2, 'triangle', 0.15, 0.01, 1.2));
+                } else {
+                    // Light chords on 2 and 4, a plucked bass walking root, fifth, root, fifth.
+                    for (let k = 1; k < ch[3]; k += 2)
+                        ch[0].forEach(function(m) { bellNote(bus, midiHz(m), start + k * beat, 0.5, 0.04, oscs, 4, 0.12, 0.04); });
+                    for (let k = 0; k < ch[3]; k++)
+                        oscs.push(note(bus, midiHz(k % 2 ? ch[2] : ch[1]), start + k * beat, beat * 0.7, 'triangle', 0.15, 0.008, beat * 0.4));
+                }
+                bt += ch[3];
+            });
+            tickTock(bus, t0, beat, oscs, 0.03);
+            return end;
+        },
+        suspense: function(bus, lead, t0, beat, oscs) {
+            let bt = 0;
+            SUSPENSE_BARS.forEach(function(bar, b) {
+                let start = t0 + bt * beat, final = b == SUSPENSE_BARS.length - 1;
+                let pad = bar[0];
+                if (pad.length > 4) {   // two chords in one bar
+                    padChord(bus, pad.slice(0, 3), start, 2 * beat + 0.4, 0.012, oscs);
+                    padChord(bus, pad.slice(3), start + 2 * beat, 2 * beat + 0.4, 0.012, oscs);
+                } else padChord(bus, pad, start, final ? 4 * beat + 1.6 : 4 * beat + 0.4, 0.012, oscs);   // each overlaps the next, so the pad never dips
+                // The heartbeat: lub-dub on 1 (on every beat in the two bars before the end).
+                let beats = b >= SUSPENSE_BARS.length - 3 && !final ? [0, 1, 2, 3] : [0];
+                beats.forEach(function(k) {
+                    let root = bar[4] && k >= 2 ? bar[4] : bar[1];
+                    thump(bus, midiHz(root), start + k * beat, 0.32, oscs);
+                    thump(bus, midiHz(root), start + k * beat + 0.28 * beat, 0.2, oscs);
+                });
+                // The celesta: a bell with a soft overtone an octave up.
+                bar[2].forEach(function(m, i) {
+                    let t = start + i * bar[3] * beat;
+                    bellNote(lead, midiHz(m), t, final ? 3 : Math.max(0.7, bar[3] * beat * 2), final ? 0.12 : 0.1, oscs, 2, 0.3, 0.3);
+                });
+                bt += 4;
+            });
+            return t0 + THINK_BEATS * beat;
+        },
+        musicbox: function(bus, lead, t0, beat, oscs) {
+            // The music box: a bright tine (its overtone a twelfth up, fading fast) that rings on.
+            let end = melody(MUSICBOX_MELODY, t0, beat, function(f, t, len, last) {
+                bellNote(lead, f, t, last ? 3 : 1.6, last ? 0.12 : 0.13, oscs, 3, 0.12, 0.2);
+            });
+            MUSICBOX_CHORDS.forEach(function(ch, b) {
+                let start = t0 + b * 3 * beat, final = b == MUSICBOX_CHORDS.length - 1;
+                // Oom-pah-pah: the bass on 1, a soft chord on 2 and 3 (all of it on 1 at the end).
+                oscs.push(note(bus, midiHz(ch[1]), start, final ? 2.6 : beat * 0.9, 'triangle', 0.13, 0.008, final ? 1.6 : beat * 0.5));
+                (final ? [0] : [1, 2]).forEach(function(k) {
+                    ch[0].forEach(function(m) { bellNote(bus, midiHz(m), start + k * beat, final ? 2.8 : 0.6, final ? 0.04 : 0.03, oscs, 3, 0.08, 0.1); });
+                });
+            });
+            return end;
+        },
+    };
+
+    // Plays a tune into c (an AudioContext, or an OfflineAudioContext for the
+    // tests) for `seconds`; returns { master, oscs, end, level } without
+    // starting any stop logic.
+    const THINK_LEVEL = { calm: 0.62, marimba: 0.8, suspense: 1.2, musicbox: 1.0 };   // about as loud as each other
+    function scheduleThink(c, seconds, t0, tune) {
+        tune = thinkTune(tune);
         let saved = ctx;
         ctx = c;
         let oscs = [ ];
         let secs = Math.max(10, Math.min(120, +seconds || 30));
         let bpm = Math.max(60, Math.min(140, THINK_BEATS * 60 / secs));   // 20.6 to 48 s fit exactly
         let beat = 60 / bpm;
+        let level = THINK_LEVEL[tune];
 
         let master = c.createGain();
         master.gain.setValueAtTime(0.0001, t0);
-        master.gain.exponentialRampToValueAtTime(0.62, t0 + 0.6);   // under the host's voice, not over it
+        master.gain.exponentialRampToValueAtTime(level, t0 + 0.6);   // under the host's voice, not over it
         let warm = c.createBiquadFilter();                           // nothing shrill gets through
         warm.type = 'lowpass';
-        warm.frequency.setValueAtTime(2600, t0);
+        warm.frequency.setValueAtTime(tune == 'musicbox' ? 3400 : 2600, t0);
         warm.Q.setValueAtTime(0.5, t0);
         warm.connect(master);
-        // A little room: one soft echo under the melody.
+        // A little room: one soft echo under the lead.
         let echo = c.createDelay(1);
         echo.delayTime.setValueAtTime(beat * 0.75, t0);
         let echoBack = c.createGain(), echoOut = c.createGain();
         echoBack.gain.setValueAtTime(0.22, t0);
-        echoOut.gain.setValueAtTime(0.2, t0);
+        echoOut.gain.setValueAtTime(tune == 'marimba' ? 0.12 : 0.2, t0);
         echo.connect(echoBack).connect(echo);
         echo.connect(echoOut).connect(warm);
-        let melodyBus = c.createGain();
-        melodyBus.gain.setValueAtTime(1, t0);
-        melodyBus.connect(warm);
-        melodyBus.connect(echo);
+        let lead = c.createGain();
+        lead.gain.setValueAtTime(1, t0);
+        lead.connect(warm);
+        lead.connect(echo);
 
-        // Melody
-        let at = 0;
-        THINK_MELODY.forEach(function(n, i) {
-            let len = n[1] * beat;
-            if (n[0] != null) {
-                let last = i == THINK_MELODY.length - 1;
-                epNote(melodyBus, midiHz(n[0]), t0 + at, last ? len + 1.2 : Math.max(len * 1.1, 0.35), last ? 0.13 : 0.15, oscs);
-            }
-            at += len;
-        });
-        let end = t0 + at;
-        // Chords (on 1 and the "and" of 2) and a plucked bass (root on 1, fifth on 3)
-        let bt = 0;
-        THINK_CHORDS.forEach(function(ch, b) {
-            let start = t0 + bt * beat, len = ch[3] * beat, final = b == THINK_CHORDS.length - 1;
-            let hits = final ? [ [0, len + 1.4] ] : ch[3] >= 4 ? [ [0, 1.5 * beat], [1.5 * beat, 2.3 * beat] ] : [ [0, 0.9 * beat], [beat, 0.9 * beat] ];
-            hits.forEach(function(hit) {
-                ch[0].forEach(function(m) { epNote(warm, midiHz(m), start + hit[0], hit[1], 0.035, oscs); });
-            });
-            oscs.push(note(warm, midiHz(ch[1]), start, final ? len + 1.2 : Math.min(len, 2 * beat) * 0.9, 'sine', 0.16, 0.012, 0.25));
-            if (!final) oscs.push(note(warm, midiHz(ch[2]), start + Math.min(len, 2 * beat), Math.min(len, 2 * beat) * 0.85, 'sine', 0.12, 0.012, 0.2));
-            bt += ch[3];
-        });
-        // A soft tick-tock in the last two bars only: time is almost up.
-        for (let i = THINK_BEATS - 8; i < THINK_BEATS - 1; i++)
-            oscs.push(note(warm, i % 2 ? 620 : 820, t0 + i * beat, 0.04, 'sine', 0.035, 0.004, 0.03));
+        let end = THINK_BUILD[tune](warm, lead, t0, beat, oscs);
 
         ctx = saved;
-        return { master: master, oscs: oscs, end: end };
+        return { master: master, oscs: oscs, end: end, level: level };
     }
 
     // Returns a function that stops the music.
-    function playThinkMusic(seconds) {
+    function playThinkMusic(seconds, tune) {
         let c = audioCtx();
         if (!c) return function() { };
         let t0 = c.currentTime + 0.05;
-        let m = scheduleThink(c, seconds, t0);
+        let m = scheduleThink(c, seconds, t0, tune);
         let master = m.master, oscs = m.oscs;
         master.connect(c.destination);
-        loopGain = master;
+        loopGain = master; loopLevel = m.level;
 
         let stopped = false;
         return function stop() {
@@ -633,13 +870,14 @@ var JPAudio = (function() {
     }
 
     // Looping track (the Final Jeopardy! think timer). Uses sounds/think.* if
-    // present; otherwise the built-in tune above.
+    // present; otherwise the built-in tune chosen in Settings (opts.tune).
     let loopName = null;
     let loopWasRunning = false;
     let musicStop = null;
-    let loopGain = null, ducked = false;
+    let loopGain = null, loopLevel = 0.62, ducked = false;
     function startLoop(name, opts) {
         stopLoop();
+        stopPreview();
         if (!enabled) return;
         loopName = name;
         findFile(name).then(function(a) {
@@ -651,7 +889,7 @@ var JPAudio = (function() {
                 a.currentTime = 0;
                 a.play().catch(function() { });
             } else if (name == 'think') {
-                musicStop = playThinkMusic(opts && opts.seconds);
+                musicStop = playThinkMusic(opts && opts.seconds, opts && opts.tune);
             }
         });
     }
@@ -660,13 +898,30 @@ var JPAudio = (function() {
         if (musicStop) { musicStop(); musicStop = null; }
         loopName = null; loopGain = null; ducked = false;
     }
+    // Settings' "Hear it" button: the first `seconds` (default 12) of a built-in
+    // tune at the default 30-second tempo, then a fade. Plays even with sound
+    // effects off (you asked for it); a second call stops the one before.
+    // Returns a function that stops it.
+    let previewStop = null, previewTimer = null;
+    function previewThink(tune, seconds) {
+        stopPreview();
+        let stop = playThinkMusic(30, tune);
+        previewStop = stop;
+        previewTimer = setTimeout(stopPreview, (seconds || 12) * 1000);
+        return stopPreview;
+    }
+    function stopPreview() {
+        if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+        if (previewStop) { let s = previewStop; previewStop = null; s(); if (!musicStop) loopGain = null; }
+    }
+
     // Turn the music down (to a quarter) while the microphone listens, and back up.
     function duckLoop(on) {
         ducked = !!on;
         let level = on ? 0.25 : 1;
         if (loopAudio) { try { loopAudio.volume = (loopName == 'think' ? 0.7 : 1) * level; } catch (e) { } }
         if (loopGain && ctx) {
-            try { let now = ctx.currentTime; loopGain.gain.cancelScheduledValues(now); loopGain.gain.setValueAtTime(Math.max(loopGain.gain.value, 0.0001), now); loopGain.gain.exponentialRampToValueAtTime(0.62 * level, now + 0.3); } catch (e) { }
+            try { let now = ctx.currentTime; loopGain.gain.cancelScheduledValues(now); loopGain.gain.setValueAtTime(Math.max(loopGain.gain.value, 0.0001), now); loopGain.gain.exponentialRampToValueAtTime(loopLevel * level, now + 0.3); } catch (e) { }
         }
     }
     JPClock.onPause(function() {
@@ -874,6 +1129,7 @@ var JPAudio = (function() {
         play: play,
         startLoop: startLoop,
         scheduleThink: scheduleThink,   // for the tests: render the think music offline
+        thinkTunes: THINK_TUNES, thinkDefault: THINK_DEFAULT, previewThink: previewThink, stopPreview: stopPreview,
         stopLoop: stopLoop,
         duckLoop: duckLoop,
         devices: devices, micChoice: micChoice, setOutput: setOutput, outputRoutable: outputRoutable,

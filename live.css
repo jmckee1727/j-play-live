@@ -31,6 +31,7 @@
 
 /* ---- top bar ---- */
 .jp-top {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 1.2em;
@@ -39,6 +40,11 @@
     min-height: 3.2em;
 }
 .jp-round { color: #fff; font-family: "JP Board", Anton, Impact, "Arial Narrow", sans-serif; font-weight: normal; font-size: 1.9em; line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; text-shadow: 0.06em 0.06em 0 #D69F4C, 0.1em 0.1em 0.04em #000; }
+/* The game's air date: centred on the bar, small and dim so it never competes with the board. */
+.jp-date  { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -40%); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none;
+            color: rgba(255, 255, 255, 0.62); font-size: 0.82em; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; text-shadow: 1px 1px 1px #000; }
+.jp-date[hidden] { display: none; }
+@media (max-width: 820px) { .jp-date { display: none; } }
 .jp-cat   { flex: 1; text-transform: uppercase; font-weight: bold; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jp-val   { color: gold; font-weight: bold; font-size: 1.3em; white-space: nowrap; }
 .jp-timer { position: relative; width: 220px; height: 14px; border: 2px solid #fff; border-radius: 3px; overflow: hidden; background: rgba(0,0,0,0.35); }

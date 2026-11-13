@@ -7,7 +7,8 @@
 // the contestants who followed give their money back), CONTROL=1 (control follows a
 // "y" during the pick), CONCEDE=1 ("Mark me wrong" during the pick), REWIND=1, REWINDFJ=1, PAUSE=1, MEDIA=none|half|full,
 // CHAMP=1 (you won your last two games, other games: you're the returning champion at the first
-// podium), NOINTRO=1 (no contestant introductions).
+// podium), NOINTRO=1 (no contestant introductions), EASY=1 (the Easy difficulty: after your miss,
+// playing alone, the contestants still ring in within a second).
 // Needs test/fixtures/game9537.html (test/fetch_fixture.sh).
 const { JSDOM, VirtualConsole } = require('jsdom');
 const fs = require('fs');
@@ -53,7 +54,7 @@ w.navigator.mediaDevices = undefined;
 
 // Settings before the scripts load.
 w.localStorage.setItem('jpLiveSettings', JSON.stringify({
-  voiceEngine: 'system', earEngine: 'chrome', readCategories: false, sfx: true, contestantVoices: false, micMode: 'always', answerMode: 'speech', difficulty: 'custom', customMedian: 700, customSpread: 0.4,
+  voiceEngine: 'system', earEngine: 'chrome', readCategories: false, sfx: true, contestantVoices: false, micMode: 'always', answerMode: 'speech', difficulty: process.env.EASY ? 'easy' : 'custom', customMedian: 700, customSpread: 0.4,
   answerSeconds: 2, buzzWindowSeconds: 1.2, lockoutMs: 150, ddAnswerSeconds: 2, fjSeconds: 2, autoAdvanceMs: 120, mediaCredit: process.env.MEDIA || 'none', settingsVersion: 6, onboardedVoice: true, voicePick: false,
   playerCount: MULTI || 1, players: [ { name: 'Ann', key: ' ' }, { name: 'Bob', key: 'a' }, { name: 'Cy', key: 'l' } ], mousePlayer: MULTI ? 1 : 0, contestantsOn: !process.env.NOCONT,
   intro: !process.env.NOINTRO,
@@ -329,6 +330,14 @@ function finish() {
   console.log('bot:', JSON.stringify(stats), 'utterances:', spoken.length, 'recognizer starts:', srStarts);
   console.log('final panel:', (doc.querySelector('.jp-panel') || { textContent: '' }).textContent.replace(/\s+/g, ' ').slice(0, 240));
   const saved = JSON.parse(w.localStorage.getItem('jpLiveScores') || '[]').filter(e => !e.seed);
+  // Contestants ringing in after your miss (playing alone): within a second; other ring-ins as before.
+  const rings = st.ringIns || [];
+  const hurried = rings.filter(r => r.hurry), normal = rings.filter(r => !r.hurry);
+  console.log('ring-ins:', normal.length, 'normal (max', Math.max(0, ...normal.map(r => r.t)).toFixed(0), 'ms) ·', hurried.length, 'after your miss (max', Math.max(0, ...hurried.map(r => r.t)).toFixed(0), 'ms)');
+  if (hurried.some(r => r.t > 1000)) errors.push('a contestant took over a second after your miss: ' + hurried.map(r => r.t.toFixed(0)).join(','));
+  if (MULTI && hurried.length) errors.push('ring-ins hurried in a multiplayer game');
+  if (!MULTI && !hurried.length) errors.push('no contestant rang in after a miss of yours (the hurry went untested)');
+  if (process.env.EASY && !normal.some(r => r.t > 1000)) errors.push('on Easy, no ordinary ring-in took over a second (did everything get hurried?)');
   // The contestant introductions, the seating and who starts.
   const seats = [...doc.querySelectorAll('.jp-podium')].map(p => p.dataset.who);
   const iMeet = spoken.findIndex(t => /meet today's contestants/i.test(t));

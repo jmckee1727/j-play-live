@@ -124,7 +124,9 @@ from there (you keep control, their scores don't get that money, and so on). Whe
 lands on a Daily Double they wager sensibly for their position and get the archived result; you
 wager yourself when you land on one. In Final Jeopardy! the contestants wager the way a
 game-theory-savvy player would, based on the live standings (you included), and their responses
-are the archived ones. The category is shown across the top of every clue.
+are the archived ones. The category is shown across the top of every clue. Playing alone, once
+you've missed a clue, the contestants still to respond to it ring in within a second (at any
+difficulty), so the rest of the clue doesn't drag.
 
 **Meet the contestants.** Before the first round the host introduces everyone, the way the show's
 announcer does: the challengers in podium order, then the returning champion with their winnings

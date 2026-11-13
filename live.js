@@ -2475,7 +2475,10 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             while (next && responded[next.who]) next = info.sequence[++seqIdx] || null;
             setTimer(S.buzzWindowSeconds, 'green');
             let isRebound = Object.keys(responded).length > 0 || Object.keys(out).length > 0;
-            let ev = await race(tok, next, S.buzzWindowSeconds * 1000, function(who) { return !out[who]; }, function(who) { return locked[who] || 0; }, function(who, t) { locked[who] = t; }, ringInMult(info, isRebound));
+            // Playing alone and you've already missed this clue: the contestants still to
+            // respond ring in within a second, so the rest of the clue doesn't drag (John, Nov 13).
+            let hurry = !online() && humans().length == 1 && userOut() ? 1000 : 0;
+            let ev = await race(tok, next, S.buzzWindowSeconds * 1000, function(who) { return !out[who]; }, function(who) { return locked[who] || 0; }, function(who, t) { locked[who] = t; }, ringInMult(info, isRebound), hurry);
             if (!alive(tok)) break;
             clearTimer();
 
@@ -2511,6 +2514,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                     }
                 }
             } else if (ev.type == 'contestant') {
+                (G.ringIns || (G.ringIns = [ ])).push({ t: ev.t, hurry: !!hurry });   // for the tests
                 if (next && !userOut()) G.stats.buzzLost++;
                 JPAudio.play('buzz');
                 if (online() && G.online.localBuzz) setHint('<b>' + esc(ev.who) + '</b> beat you to it.');
@@ -2584,7 +2588,8 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
 
     // Wait for the first of: the user's buzz, the next archived contestant's
     // simulated buzz, or the ring-in window closing.
-    function race(tok, contestant, windowMs, userAllowed, getLock, setLock, mult) {
+    // maxMs (optional): the latest the contestant rings in.
+    function race(tok, contestant, windowMs, userAllowed, getLock, setLock, mult, maxMs) {
         if (online()) return raceOnline(tok, contestant, windowMs, userAllowed, getLock, setLock, mult);
         return new Promise(function(resolve) {
             let done = false;
@@ -2597,7 +2602,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 resolve(ev);
             }
             if (contestant) {
-                let t = clamp(reaction(mult), 60, windowMs - 30);
+                let t = clamp(reaction(mult), 60, Math.min(windowMs - 30, maxMs || Infinity));
                 timers.push(JPClock.setTimeout(function() { finish({ type: 'contestant', who: contestant.who, right: contestant.right, t: t }); }, t));
             }
             timers.push(JPClock.setTimeout(function() { finish({ type: 'timeout' }); }, windowMs));

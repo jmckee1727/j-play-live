@@ -124,7 +124,20 @@ from there (you keep control, their scores don't get that money, and so on). Whe
 lands on a Daily Double they wager sensibly for their position and get the archived result; you
 wager yourself when you land on one. In Final Jeopardy! the contestants wager the way a
 game-theory-savvy player would, based on the live standings (you included), and their responses
-are the archived ones. The category is shown across the top of every clue.
+are the archived ones. The category is shown across the top of every clue. Playing alone, once
+you've missed a clue, the contestants still to respond to it ring in within a second (at any
+difficulty), so the rest of the clue doesn't drag.
+
+**Meet the contestants.** Before the first round the host introduces everyone, the way the show's
+announcer does: the challengers in podium order, then the returning champion with their winnings
+("And our returning champion, ... whose 1-day cash winnings total $20,800... Mark Ramirez!"). While
+you're on a win streak (you won your last finished game, or several in a row, whichever games they
+were, hopping around the archive or not), *you* are the returning champion: you stand at the first
+podium, the show's contestants sit to your right in their own order (their champion right next to
+you), the host introduces you last with your streak's winnings, and you start the game. Lose a game
+and the title goes back to the show's champion. Switch the introductions off with **Introductions**
+in Settings (the seating still follows the streak). With several people at one keyboard, or online,
+the show's champion keeps the title, and online games skip the introductions.
 
 ## Files
 

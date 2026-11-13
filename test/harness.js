@@ -345,7 +345,7 @@ function finish() {
   console.log('ring-ins:', normal.length, 'normal (max', Math.max(0, ...normal.map(r => r.t)).toFixed(0), 'ms) ·', hurried.length, 'after your miss (max', Math.max(0, ...hurried.map(r => r.t)).toFixed(0), 'ms)');
   if (hurried.some(r => r.t > 1000)) errors.push('a contestant took over a second after your miss: ' + hurried.map(r => r.t.toFixed(0)).join(','));
   if (MULTI && hurried.length) errors.push('ring-ins hurried in a multiplayer game');
-  if (!MULTI && !hurried.length) errors.push('no contestant rang in after a miss of yours (the hurry went untested)');
+  if (!MULTI && !SWEEP && !hurried.length) errors.push('no contestant rang in after a miss of yours (the hurry went untested)');
   if (process.env.EASY && !normal.some(r => r.t > 1000)) errors.push('on Easy, no ordinary ring-in took over a second (did everything get hurried?)');
   // The contestant introductions, the seating and who starts.
   const seats = [...doc.querySelectorAll('.jp-podium')].map(p => p.dataset.who);

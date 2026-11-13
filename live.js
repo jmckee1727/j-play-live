@@ -42,6 +42,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         voicePick: true,              // pick clues by voice ("Science for 600") when answering by voice
         readCategories: true,
         sfx: true,
+        fjMusic: 'calm',              // Final Jeopardy! think music: 'calm' (the built-in tune, or sounds/think.*) or 'off'
         upper: true,
         answerSeconds: 5,
         buzzWindowSeconds: 5,
@@ -1148,6 +1149,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
             '<tr><td>Read categories</td><td><label><input type="checkbox" data-s="readCategories"' + (S.readCategories ? ' checked' : '') + '>Host reads the categories at the start of each round</label></td></tr>' +
             '<tr><td>Uppercase clues</td><td><label><input type="checkbox" data-s="upper"' + (S.upper ? ' checked' : '') + '>Show clue text in capitals, like the show</label></td></tr>' +
             '<tr><td>Sound effects</td><td><label><input type="checkbox" data-s="sfx"' + (S.sfx ? ' checked' : '') + '>On (drop files into the extension\'s <code>sounds/</code> folder to replace the built-in tones)</label></td></tr>' +
+            '<tr><td>Final Jeopardy! music</td><td><select data-s="fjMusic" style="min-width:12em"><option value="calm"' + (S.fjMusic != 'off' ? ' selected' : '') + '>Calm think music</option><option value="off"' + (S.fjMusic == 'off' ? ' selected' : '') + '>Off (silent thinking time)</option></select></td></tr>' +
             '<tr><td>Playback</td><td><select class="jp-out-device" style="max-width:100%"><option value="default">System default</option></select>' +
               '<span class="jp-out-device-note jp-note" style="margin-left:8px">the studio voice, effects and music (a system voice always follows the system default)</span></td></tr>' +
             (roomRows ? '' : '<tr><td>Time to answer</td><td><input type="number" data-s="answerSeconds" min="2" max="15" value="' + (+S.answerSeconds) + '" style="min-width:5em;width:5em"> s after buzzing &nbsp; ' +
@@ -1515,6 +1517,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
                 else S[key] = inp.value;
 
                 if (key == 'sfx') JPAudio.setEnabled(S.sfx);
+                if (key == 'fjMusic' && S.fjMusic == 'off') JPAudio.stopLoop();
                 if (key == 'hostVoice' || key == 'neuralVoice') setupVoices();
                 if (key == 'earSize') refreshEarUI(panel);
                 if (key == 'micMode') { S.answerMode = S.micMode == 'off' ? 'typed' : 'speech'; applyMicHold(); }
@@ -2964,7 +2967,7 @@ var startLiveGame;        // wired to the "Play Live" button in archive.js
         await say('You have ' + S.fjSeconds + ' seconds. Good luck.', tok);   // before the music, so the mic doesn't hear it
         if (!alive(tok)) return;
 
-        JPAudio.startLoop('think');
+        if (S.fjMusic != 'off') JPAudio.startLoop('think', { seconds: S.fjSeconds });
         if (online()) {
             // Everyone responds at once, on their own machine; the responses come over the channel and are judged alike everywhere.
             let me = G.online.me;
